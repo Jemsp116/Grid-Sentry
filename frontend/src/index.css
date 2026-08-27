@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg-base text-text-primary font-sans antialiased;
+  }
+
+  /* Accessibility baseline: never remove focus outlines without a replacement. */
+  :focus-visible {
+    outline: 2px solid theme('colors.accent-primary');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* The signature severity rail — a thin colored left edge on alert surfaces. */
+  .severity-rail {
+    border-left-width: 3px;
+    border-left-style: solid;
+  }
+}

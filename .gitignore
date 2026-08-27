@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env files — only .env.example is committed
+.env
+**/.env
+!**/.env.example
+
+# Build output
+dist/
+**/dist/
+build/
+**/build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# GeoIP database (licence-restricted, download separately — see README)
+backend/data/*.mmdb
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Test / coverage
+coverage/
+**/coverage/
