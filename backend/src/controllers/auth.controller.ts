@@ -11,7 +11,6 @@ import {
 } from '../utils/tokens.js';
 import * as Users from '../models/users.model.js';
 import * as Tokens from '../models/refreshTokens.model.js';
-import { withTransaction } from '../config/db.js';
 
 const REFRESH_COOKIE = 'gs_refresh';
 
@@ -33,6 +32,8 @@ const LoginSchema = z.object({
   email: z.string().email('A valid email is required'),
   password: z.string().min(1, 'Password is required'),
 });
+
+import { logAuditEvent } from '../utils/auditLogger.js';
 
 /** POST /api/auth/login */
 export async function login(req: Request, res: Response): Promise<void> {
@@ -67,6 +68,15 @@ export async function login(req: Request, res: Response): Promise<void> {
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role, sid: session.id });
 
+  // Audit log login success
+  logAuditEvent({
+    userId: user.id,
+    action: 'auth.login_success',
+    targetType: 'user',
+    targetId: user.id,
+    details: { email: user.email, role: user.role },
+  });
+
   res.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions());
   res.status(200).json({
     accessToken,
@@ -100,6 +110,16 @@ export async function logout(req: Request, res: Response): Promise<void> {
     const row = await Tokens.findByHash(hashRefreshToken(raw));
     if (row && !row.revoked) await Tokens.revokeById(row.id);
   }
+
+  if (req.user?.id) {
+    logAuditEvent({
+      userId: req.user.id,
+      action: 'auth.logout',
+      targetType: 'user',
+      targetId: req.user.id,
+    });
+  }
+
   res.clearCookie(REFRESH_COOKIE, { ...refreshCookieOptions(), maxAge: undefined });
   res.status(204).send();
 }
@@ -111,6 +131,3 @@ export async function me(req: Request, res: Response): Promise<void> {
   if (!user) throw ApiError.unauthorized();
   res.status(200).json({ user: { id: user.id, email: user.email, role: user.role } });
 }
-
-// Re-export for potential reuse/testing.
-export { withTransaction };

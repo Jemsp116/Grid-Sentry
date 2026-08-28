@@ -26,13 +26,15 @@ function log(msg: string, meta?: Record<string, unknown>) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), svc: 'worker', msg, ...meta }));
 }
 
+import { evaluateRulesOnce } from './ruleEvaluator.js';
+
 let running = true;
 
-async function evaluateRulesOnce(): Promise<void> {
-  // TICKET-005: load active rules, query OpenSearch for new events since the
-  // last checkpoint, evaluate threshold/time-window conditions, write alerts.
-  // For now this is a no-op heartbeat.
-  log('tick — detection engine not yet implemented (TICKET-005)');
+async function runTick(): Promise<void> {
+  const alertsCreated = await evaluateRulesOnce();
+  if (alertsCreated > 0) {
+    log('detection tick completed', { alertsCreated });
+  }
 }
 
 async function mainLoop(): Promise<void> {
@@ -42,7 +44,7 @@ async function mainLoop(): Promise<void> {
   });
   while (running) {
     try {
-      await evaluateRulesOnce();
+      await runTick();
     } catch (err) {
       log('evaluation error', { error: err instanceof Error ? err.message : String(err) });
     }

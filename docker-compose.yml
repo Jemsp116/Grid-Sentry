@@ -1,21 +1,14 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: soc_postgres
+  mongodb:
+    image: mongo:7.0
+    container_name: soc_mongodb
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-soc_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      POSTGRES_DB: ${POSTGRES_DB:-soc_dashboard}
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      # Migrations in db/migrations run automatically on FIRST container start,
-      # in filename order (001_init.sql, 002_*.sql, ...).
-      - ./db/migrations:/docker-entrypoint-initdb.d
+      - mongodb_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-soc_admin} -d ${POSTGRES_DB:-soc_dashboard}"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,7 +19,13 @@ services:
     restart: unless-stopped
     environment:
       - discovery.type=single-node
-      - plugins.security.disabled=true
+      # OpenSearch 2.12+ runs a demo-config installer that hard-fails unless
+      # OPENSEARCH_INITIAL_ADMIN_PASSWORD is set. For the local demo we turn
+      # security off entirely, which requires BOTH of these entrypoint switches
+      # (the runtime `plugins.security.disabled` setting alone does NOT skip the
+      # installer). Do not use in production.
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_SECURITY_PLUGIN=true
       - bootstrap.memory_lock=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
     ulimits:
@@ -52,7 +51,7 @@ services:
     ports:
       - "4000:4000"
     depends_on:
-      postgres:
+      mongodb:
         condition: service_healthy
       opensearch:
         condition: service_healthy
@@ -67,7 +66,7 @@ services:
     env_file:
       - ./worker/.env
     depends_on:
-      postgres:
+      mongodb:
         condition: service_healthy
       opensearch:
         condition: service_healthy
@@ -89,28 +88,46 @@ services:
       - ./frontend:/app
       - /app/node_modules
 
-  # ── Log ingestion (wired up in TICKET-003) ──────────────────────────
-  # Uncomment together once TICKET-003 is built. `ssh-target` is a real
-  # OpenSSH server whose auth log Vector tails; run Hydra against it to
-  # generate genuine brute-force logs for the detection demo.
-  #
-  # ssh-target:
-  #   build: ./ingestion/ssh-target
-  #   container_name: soc_ssh_target
-  #   volumes:
-  #     - ssh_auth_logs:/var/log/ssh-target
-  #
-  # vector:
-  #   image: timberio/vector:0.40.0-debian
-  #   container_name: soc_vector
-  #   depends_on:
-  #     opensearch:
-  #       condition: service_healthy
-  #   volumes:
-  #     - ./ingestion/vector.toml:/etc/vector/vector.toml:ro
-  #     - ssh_auth_logs:/var/log/ssh-target:ro
+  # ── Log ingestion (TICKET-003: Vector → OpenSearch) ───────────────────────────
+  ssh-target:
+    build: ./ingestion/ssh-target
+    container_name: soc_ssh_target
+    restart: unless-stopped
+    volumes:
+      - ssh_auth_logs:/var/log/ssh-target
+
+  # ── OpenSearch Template Bootstrap ──────────────────────────────────────────
+  opensearch-template:
+    image: curlimages/curl:latest
+    container_name: soc_opensearch_template
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      echo 'Applying OpenSearch template for log indices...'
+      curl -X PUT http://opensearch:9200/_index_template/soc-logs-template
+        -H 'Content-Type: application/json'
+        -d @/config/soc-logs-template.json
+        && echo '' && echo 'Template applied successfully.' || echo 'Template application failed.'
+      "
+    volumes:
+      - ./ingestion/opensearch/soc-logs-template.json:/config/soc-logs-template.json:ro
+
+  # ── Attacker (on-demand brute-force traffic generator) ─────────────────────
+  # Run with: docker compose --profile attack up attacker
+  attacker:
+    build: ./ingestion/attacker
+    container_name: soc_attacker
+    profiles: ["attack"]
+    depends_on:
+      - ssh-target
+    environment:
+      TARGET_HOST: ssh-target
+      TARGET_USER: sentry
+      REAL_PASSWORD: password123
 
 volumes:
-  postgres_data:
+  mongodb_data:
   opensearch_data:
-  # ssh_auth_logs:
+  ssh_auth_logs:

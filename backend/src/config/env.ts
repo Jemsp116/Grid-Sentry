@@ -14,7 +14,7 @@ const EnvSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  MONGODB_URI: z.string().default('mongodb://mongodb:27017/gridsentry'),
 
   OPENSEARCH_NODE: z.string().url().default('http://opensearch:9200'),
   OPENSEARCH_USERNAME: z.string().optional(),
@@ -24,6 +24,14 @@ const EnvSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be set (>=16 chars)'),
   JWT_ACCESS_EXPIRY: z.string().default('15m'),
   JWT_REFRESH_EXPIRY: z.string().default('7d'),
+
+  ABUSEIPDB_API_KEY: z.string().optional(),
+
+  SLACK_WEBHOOK_URL: z.string().url().optional(),
+  ALERT_EMAIL_RECIPIENT: z.string().email().optional(),
+  DASHBOARD_BASE_URL: z.string().default('http://localhost:3000'),
+
+  INGEST_API_KEY: z.string().default('gs_live_secret_key_2026'),
 });
 
 function loadEnv() {

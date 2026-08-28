@@ -1,0 +1,25 @@
+{
+  "index_patterns": ["soc-logs-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "properties": {
+        "timestamp":   { "type": "date" },
+        "@timestamp":  { "type": "date" },
+        "source_ip":   { "type": "ip" },
+        "log_source":  { "type": "keyword" },
+        "event_type":  { "type": "keyword" },
+        "outcome":     { "type": "keyword" },
+        "ssh_user":    { "type": "keyword" },
+        "host":        { "type": "keyword" },
+        "raw_message": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 } }
+        }
+      }
+    }
+  }
+}

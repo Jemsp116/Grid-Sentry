@@ -29,11 +29,17 @@ interface AuthContextValue {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
 
+// Dev-only escape hatch: when VITE_DISABLE_AUTH=true the login gate is skipped
+// and the app boots as this synthetic admin. Flip the flag off in frontend/.env
+// (or remove it) to restore real authentication. Never ship a build with this on.
+const AUTH_DISABLED = import.meta.env.VITE_DISABLE_AUTH === 'true';
+const DEV_USER: User = { id: 0, email: 'dev@gridsentry.local', role: 'admin' };
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<Status>('loading');
+  const [user, setUser] = useState<User | null>(AUTH_DISABLED ? DEV_USER : null);
+  const [status, setStatus] = useState<Status>(AUTH_DISABLED ? 'authenticated' : 'loading');
   // Access token lives in memory only (never localStorage) — the refresh token
   // is an httpOnly cookie the JS can't read, which is the XSS-resistant design.
   const tokenRef = useRef<string | null>(null);
@@ -105,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    if (AUTH_DISABLED) return; // no real session to end while the auth gate is bypassed
     try {
       await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
     } finally {
@@ -116,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // On first load, try to silently restore a session from the refresh cookie.
   useEffect(() => {
+    if (AUTH_DISABLED) return; // dev bypass — skip silent session restore
     let cancelled = false;
     (async () => {
       const ok = await doRefresh();

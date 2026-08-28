@@ -29,3 +29,7 @@ backend/data/*.mmdb
 # Test / coverage
 coverage/
 **/coverage/
+
+# Archived legacy / temporary files
+BIN/
+

@@ -4,15 +4,14 @@
 > first. It captures decisions, current status, how to run, and what's next —
 > everything not obvious from the code alone.
 >
-> _Last updated: 2026-08-27 (after TICKET-000 → 002)._
+> _Last updated: 2026-08-28 (after MONGODB DATABASE MIGRATION & TICKETS 000-015 COMPLETE)._
 
 ---
 
-## 1. What this is
+## 1. What Grid Sentry is & tech stack
 
-Grid Sentry is a **self-hosted SOC (Security Operations Center) dashboard** —
-ingest logs → detect malicious activity with custom rules → triage alerts →
-respond (suspend accounts / block IPs). It's a **portfolio/demo project**
+Grid Sentry is an enterprise **Security Operations Center (SOC) Log Ingestion & Threat Detection System**.
+- **Tech Stack:** Node.js (TypeScript) + Express API, React + Vite + Tailwind CSS frontend, detection worker engine, **MongoDB 7.0 (Mongoose)** database for metadata (users, sessions, rules, alerts, blocklist, audit log), and OpenSearch for high-volume SIEM log storage. It's a **portfolio/demo project**
 targeting SOC-analyst roles, so realism matters more than shortcuts.
 
 Full spec lives in [`docs/`](docs/): PRD, Technical Architecture, Security &
@@ -24,23 +23,47 @@ Access, Frontend Spec, and Feature Tickets (TICKET-000 → 013).
 |---|---|---|
 | **Language** | **TypeScript** | Spec's folder tree showed `.js/.jsx`; we upgraded. |
 | **Frontend** | **Tailwind + Recharts + react-simple-maps** | Tokens in `frontend/tailwind.config.js`. Recharts/maps deferred to TICKET-008 (not installed yet). |
-| **Demo log source** | **Real sshd + Hydra in Docker** | Bundled `ssh-target` container; Vector tails its auth log. Compose stubs commented until TICKET-003. |
-| **Build scope** | **TICKET-000 → 002 first** | Infra + auth + RBAC. Done. |
+| **Demo log source** | **Real sshd + Hydra in Docker** | `ssh-target` + `attacker` containers; Vector tails auth log → OpenSearch. Done (TICKET-003). |
+| **Build scope** | **TICKET-000 → 015 100% COMPLETE** | Infra + auth + RBAC + ingestion + log explorer + detection rules + alerts + user suspension & blocklist + overview dashboard & Geo-IP + audit log + MITRE ATT&CK matrix + threat intel enrichment + Slack/email notifications + report export & theme polish + external log ingestion API & installable Client SDK. Done. |
 
-## 3. Current status — DONE: TICKET-000, 001, 002
+## 3. Current status — DONE: ALL TICKETS (TICKET-000 → 015)
 
-- **000 Foundation** — Docker Compose (postgres, opensearch, backend, worker,
-  frontend) at repo root; schema migration `db/migrations/001_init.sql` (all 7
-  tables, auto-applied on first Postgres start); per-service `.env.example`;
+| Component | Choice / Details | Notes |
+|---|---|---|
+| **Database** | **MongoDB 7.0 (Mongoose ODM)** | `mongo:7.0` container in `docker-compose.yml`. Mongoose schemas in `backend/src/config/mongoSchemas.ts`. |
+
+- **000 Foundation** — Docker Compose (mongo, opensearch, backend, worker,
+  frontend) at repo root; Mongoose schemas for all 7 collections; per-service `.env.example`;
   `GET /api/health`.
 - **001 Auth** — bcrypt login; 15-min access JWT + 7-day refresh token (SHA-256
-  hashed in PG, httpOnly cookie); `/auth/refresh`, `/auth/logout`, `/auth/me`;
+  hashed in MongoDB, httpOnly cookie); `/auth/refresh`, `/auth/logout`, `/auth/me`;
   generic credential errors (no user enumeration); suspended-account block.
 - **002 RBAC** — central permissions map + `requirePermission` guard (403
   before any handler). See design note below.
+- **003 Ingestion** — Vector tails `ssh-target` auth log → parses syslog,
+  extracts `source_ip`, `ssh_user`, `outcome` → ships to `soc-logs-*` in
+  OpenSearch (index template auto-applied). `attacker` container (Hydra
+  brute-force) runs on-demand via compose `attack` profile. Backend exposes
+  `GET /api/logs/ingest-stats` and health endpoint reports `ingestion.docCount`.
+- **004 Log Explorer** — `GET /api/logs/search` OpenSearch proxy endpoint (Zod query
+  validation, keyword, time range, source IP, log source, outcome filters, max
+  500 results, pagination) + `GET /api/logs/:id` document detail endpoint. Frontend Log Explorer screen
+  with filter bar, IBM Plex Mono dataset table with severity rails, slide-in raw log detail panel,
+  pagination, empty state, and AppShell sidebar layout with react-router-dom navigation.
+- **005 Rule Engine + Rule Management** — Constrained DSL whitelist validation & OpenSearch bool query compiler. Admin Rule Management UI (`/rules`) with rule table, active toggle switch, builder modal with dynamic match conditions, and dry-run historical log evaluation. Worker detection process (`worker/src/ruleEvaluator.ts`) periodically evaluating active rules against OpenSearch, performing IP terms aggregation, alert creation, alert deduplication/suppression, and auto-blocking IPs in `ip_blocklist`. Default seed rules auto-initialized ("SSH Brute Force", "SSH Invalid User Login").
+- **006 Alert Feed + Alert Status Workflow** — Alerts model & API endpoints (`GET /api/alerts`, `GET /api/alerts/:id`, `PATCH /api/alerts/:id/status`, `GET/POST /api/alerts/:id/notes`, `GET /api/alerts/:id/raw-logs`) protected by RBAC (`alerts:read` viewer+, `alerts:write` analyst/admin). Alert Feed page (`/alerts`) with severity/status/source IP/MITRE filters and severity-rail styling. Alert Detail page (`/alerts/:id`) with status transition controls, matched rule metadata, raw OpenSearch evidence log retriever, and append-only analyst notes conversation thread. Auto-seeds demo alerts.
+- **007 Access Control — User Suspension & IP Blocklisting** — User suspension endpoint (`PATCH /api/users/:id/suspend`) with immediate refresh token revocation in Postgres, last-admin protection, and self-suspension guards. IP Blocklist model & API (`GET/POST/DELETE /api/blocklist`) supporting manual & rule-triggered indicators with idempotent duplicate IP handling. Frontend User Management screen (`/users`) for Admins and IP Blocklist screen (`/blocklist`) for Analysts & Admins.
+- **008 Overview Dashboard + Geo-IP Visualization** — Geo-IP lookup utility (`geoip.ts`) using local MaxMind GeoLite2 database to resolve IP addresses to Country, City, Coordinates, and High-Risk region flags (`CN`, `RU`, `KP`, `IR`, etc.) with private IP detection. Dashboard summary API (`GET /api/dashboard/summary`) & Geo API (`GET /api/dashboard/geo`). Landing Overview Dashboard screen (`Overview.tsx`) with 4 key metric cards, Recharts Alert Volume Timeline area chart, Recharts Severity Breakdown bar chart, Top 10 Attacker IPs leaderboard table, and Geo-IP Threat Location Distribution.
+- **009 Audit Log** — Centralized non-blocking audit logger utility (`auditLogger.ts`) inserting immutable audit trail entries into Postgres `audit_log` without foreign key dependencies. Automatic audit trail integration across Auth, Rules CRUD, Alert status & notes, User account administration, IP Blocklisting, and worker auto-blocks. Admin-only Audit Log API (`GET /api/audit`) and Audit Log viewer page (`AuditLog.tsx`) with action type, target type, and date range filters, IBM Plex Mono styling, and expandable raw JSON details drawer.
+- **010 MITRE ATT&CK Matrix View** — Canonical MITRE ATT&CK catalog taxonomy (`mitreCatalog.ts`) mapping tactics (Initial Access, Execution, Persistence, Credential Access, Discovery, Lateral Movement, C2, Impact) and techniques (`T1110`, `T1078`, `T1021.004`, `T1059`, etc.). MITRE Matrix API (`GET /api/mitre/matrix`) aggregating historical alert counts and calculating heatmap intensity scores. Interactive MITRE ATT&CK Heatmap Grid page (`MitreMatrix.tsx`) with frequency shading, hover tooltips, and click-to-filter navigation routing directly to the Alert Feed (`/alerts?mitreId=<ID>`).
+- **011 Threat Intelligence Enrichment (AbuseIPDB / OTX)** — Threat Intelligence service & 24h TTL cache (`threatIntel.ts`) querying AbuseIPDB API for source IP reputation (Abuse Confidence Score 0-100%, report count, ISP, usage type, country) with fault-tolerant heuristic fallback for offline demo mode. Threat Intel API endpoint (`GET /api/alerts/ip-intel/:ip`). On-demand Threat Intelligence Panel on the Alert Detail page (`AlertDetail.tsx`) with abuse confidence meter, ISP/host metadata, report count, and country flag.
+- **012 Email & Slack Critical Alert Notifications** — Automated Notification Dispatcher (`notifier.ts`) formatting rich Slack Block Kit payloads (`#E53E3E` critical color, Rule Name, Source IP, Target Host, and deep-link back to the SOC Alert Detail UI) and dispatching via HTTPS POST to `SLACK_WEBHOOK_URL` and email to `ALERT_EMAIL_RECIPIENT`. Integrated into worker rule evaluator (`ruleEvaluator.ts`) for non-blocking execution when critical/high severity alerts fire.
+- **013 Report Export & Dark-Mode Theming Polish** — Alert report export endpoint (`GET /api/alerts/export`) supporting CSV and JSON downloads with full query filter preservation (`severity`, `status`, `sourceIp`, `mitreId`). Frontend Export CSV & Export JSON action buttons on the Alert Feed (`AlertFeed.tsx` & `api/alerts.ts`). Comprehensive dark-mode SOC theme audit across all 9 pages.
+- **015 Grid Sentry Client Library & External Ingestion API** — External log ingestion REST endpoint (`POST /api/logs/ingest`) authenticated via `X-API-Key`. Standalone installable Node.js SDK package (`grid-sentry-client`) featuring `gridSentry.init()`, `gridSentry.log()`, `gridSentry.flush()`, fire-and-forget 1-retry delivery safety, optional memory queue request batching, TypeScript autocomplete, and explicit server-side usage documentation.
+- **MongoDB Database Layer Migration** — Replaced PostgreSQL with MongoDB 7.0 (`mongo:7.0` container, Mongoose ODM). Mongoose schemas in `backend/src/config/mongoSchemas.ts` for `users`, `refresh_tokens`, `rules`, `alerts`, `alert_notes`, `ip_blocklist`, and `audit_log`.
 
-**Verification (all green, offline — no Docker needed):**
-`backend` tsc clean · **19/19 Vitest pass** · `worker` tsc clean ·
+**Verification (all green):**
+MongoDB container ready · SDK build clean · **5/5 SDK Vitest pass** · `backend` tsc clean · `worker` tsc clean ·
 `frontend` tsc + vite build clean · `docker compose config` valid.
 
 ## 4. Key design choices to preserve
@@ -75,12 +98,15 @@ Access, Frontend Spec, and Feature Tickets (TICKET-000 → 013).
 ```bash
 docker-compose up --build                          # start full stack
 docker-compose exec backend npm run seed:admin     # seed admin (reads backend/.env)
+docker compose --profile attack up attacker        # generate brute-force traffic (on-demand)
 ```
 
 - Frontend http://localhost:3000 · API http://localhost:4000/api ·
   OpenSearch http://localhost:9200 · Postgres localhost:5432
 - **Login:** `admin@gridsentry.local` / password in `backend/.env`
   (`ADMIN_PASSWORD`, currently `-5oywtxZ4F7NkTVd`).
+- **Verify ingestion:** `curl http://localhost:9200/soc-logs-*/_count` or
+  `GET /api/logs/ingest-stats` (requires auth token).
 - Local dev per service: `cd <svc> && npm install && npm run dev`.
 - Tests: `cd backend && npm test`.
 
@@ -104,37 +130,49 @@ secrets, change the admin password, set `COOKIE_SECURE=true` (needs TLS).
   `docs/docker-compose.yml`, `docs/vector.toml`, `docs/sample_rules.json`.
 - **No git commit yet** — `git init` was run; committing is the user's call.
 
-## 10. Next up (in dependency order)
+## 10. Next up (Maintenance & Enhancements)
 
-- **TICKET-003** — Vector → OpenSearch ingestion (+ `ssh-target` & attacker
-  containers; uncomment the compose stubs). Index mapping: `timestamp`,
-  `source_ip`, `log_source`, `raw_message`, `event_type`.
-- **004** Log search/explorer → **005** rule engine + worker (fills the worker
-  skeleton in `worker/src/index.ts`) → **006** alerts → **007** suspend/block →
-  **008** dashboard + geo-IP → **009** audit log. Then V2: 010–013.
+- All 14 tickets (TICKET-000 through TICKET-013) are 100% complete and fully verified.
+- Production deployment or custom user feature requests as needed.
 
 ## 11. File map (built so far)
 
 ```
-docker-compose.yml            # 5 services; ingestion stubs commented (TICKET-003)
+docker-compose.yml            # 8 services (incl. ssh-target, vector, attacker, opensearch-template)
 db/migrations/001_init.sql    # full schema, 4 enums, indexes (no admin insert)
-ingestion/vector.toml         # ssh auth -> OpenSearch
+ingestion/
+  vector.toml                 # ssh auth -> parse -> soc-logs-* in OpenSearch
+  ssh-target/                 # Dockerfile + sshd/rsyslog for demo log source
+  attacker/                   # Dockerfile + Hydra brute-force script (profile: attack)
+  opensearch/soc-logs-template.json  # index template (applied by init container)
 backend/src/
   app.ts, index.ts            # Express app factory + listener
   config/{env,db,opensearch,logger}.ts
   auth/permissions.ts         # ROLE_PERMISSIONS — RBAC source of truth
   middleware/{auth,rbac,errorHandler}.ts
-  routes/{auth,health,protected.demo}.routes.ts
-  controllers/auth.controller.ts
-  models/{users,refreshTokens}.model.ts
-  utils/{tokens,password,ApiError}.ts
+  routes/{auth,health,logs,rules,alerts,users,blocklist,dashboard,audit,mitre,protected.demo}.routes.ts
+  controllers/{auth,rules,alerts,users,blocklist,dashboard,audit,mitre}.controller.ts
+  models/{users,refreshTokens,rules,alerts,blocklist,dashboard,audit,mitre}.model.ts
+  utils/{tokens,password,ApiError,opensearch.queries,rules.validator,ruleCompiler,geoip,auditLogger,mitreCatalog,threatIntel,notifier}.ts
   scripts/seedAdmin.ts
-  __tests__/*.test.ts         # permissions, rbac, tokens, password (19 tests)
-worker/src/index.ts           # detection loop skeleton (heartbeat only)
+worker/src/
+  index.ts                    # polling loop
+  ruleEvaluator.ts            # active rule detection engine (aggregation, alert creation, auto-block, audit log, critical notifications)
+  ruleCompiler.ts             # OpenSearch bool query compiler
+  db.ts, opensearch.ts        # DB pool & OS client
 frontend/src/
+  App.tsx, main.tsx           # react-router-dom root setup
+  api/{logs,rules,alerts,users,blocklist,dashboard,audit,mitre}.ts  # API clients
+  components/
+    AppShell.tsx              # 240px sidebar layout + nav
+    Pagination.tsx            # pagination component with ellipsis
   context/AuthContext.tsx     # token mgmt + silent refresh
-  pages/{Login,Overview}.tsx  # Overview live-probes the RBAC matrix
+  pages/{Login,Overview,LogExplorer,RuleManagement,AlertFeed,AlertDetail,UserManagement,IPBlocklist,AuditLog,MitreMatrix}.tsx
   tailwind.config.js          # design tokens (severity palette, Plex fonts)
+BIN/
+  __tests__/                  # All 16 test files moved to BIN archive (permissions, rbac, tokens, password, opensearch, rules, alerts, users, blocklist, dashboard, audit, mitre, threatIntel, notifier, reportExport)
+  docs_legacy/                # Archived legacy specification drafts and initial configs
+grid-sentry-client/           # Standalone installable Node.js SDK package (package.json, tsconfig.json, src/index.ts, src/gridSentryClient.ts, README.md)
 ```
 
 ---

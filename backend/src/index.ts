@@ -1,7 +1,7 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
-import { pool } from './config/db.js';
+import mongoose from 'mongoose';
 
 const app = createApp();
 
@@ -13,7 +13,7 @@ const server = app.listen(env.PORT, () => {
 function shutdown(signal: string) {
   logger.info('Shutting down', { signal });
   server.close(() => {
-    pool.end().finally(() => process.exit(0));
+    mongoose.disconnect().finally(() => process.exit(0));
   });
   // Force-exit if connections don't drain in time.
   setTimeout(() => process.exit(1), 10_000).unref();

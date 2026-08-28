@@ -1,59 +1,37 @@
-import pg from 'pg';
+import mongoose from 'mongoose';
 import { env } from './env.js';
 import { logger } from './logger.js';
 
-/**
- * Shared Postgres connection pool. Import `pool` for ad-hoc queries, or use the
- * `query` helper which logs slow/failed statements.
- */
-export const pool = new pg.Pool({
-  connectionString: env.DATABASE_URL,
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-});
+let isConnected = false;
 
-pool.on('error', (err) => {
-  logger.error('Unexpected Postgres pool error', { error: err.message });
-});
+export async function connectDb(): Promise<typeof mongoose> {
+  if (isConnected && mongoose.connection.readyState === 1) {
+    return mongoose;
+  }
 
-export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
-  text: string,
-  params?: unknown[],
-): Promise<pg.QueryResult<T>> {
   try {
-    return await pool.query<T>(text, params as any[]);
+    const conn = await mongoose.connect(env.MONGODB_URI);
+    isConnected = true;
+    logger.info('Connected to MongoDB database', { uri: env.MONGODB_URI });
+    return conn;
   } catch (err) {
-    logger.error('Query failed', {
+    logger.error('Failed to connect to MongoDB', {
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
   }
 }
 
-/** Run a set of statements inside a single transaction (all-or-nothing). */
-export async function withTransaction<T>(
-  fn: (client: pg.PoolClient) => Promise<T>,
-): Promise<T> {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
 export async function pingDb(): Promise<boolean> {
   try {
-    await pool.query('SELECT 1');
-    return true;
+    if (mongoose.connection.readyState !== 1) {
+      await connectDb();
+    }
+    return mongoose.connection.readyState === 1;
   } catch {
     return false;
   }
 }
+
+// Auto-connect on startup
+connectDb().catch(() => {});

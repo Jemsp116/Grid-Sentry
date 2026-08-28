@@ -7,6 +7,14 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import protectedDemoRoutes from './routes/protected.demo.routes.js';
+import logsRoutes from './routes/logs.routes.js';
+import rulesRoutes from './routes/rules.routes.js';
+import alertsRoutes from './routes/alerts.routes.js';
+import usersRoutes from './routes/users.routes.js';
+import blocklistRoutes from './routes/blocklist.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import auditRoutes from './routes/audit.routes.js';
+import mitreRoutes from './routes/mitre.routes.js';
 
 /**
  * Builds the Express app WITHOUT starting a listener, so tests can import it
@@ -30,6 +38,14 @@ export function createApp() {
   // Routes (all under /api)
   app.use('/api/health', healthRoutes);
   app.use('/api/auth', authRoutes);
+  app.use('/api/logs', logsRoutes);
+  app.use('/api/rules', rulesRoutes);
+  app.use('/api/alerts', alertsRoutes);
+  app.use('/api/users', usersRoutes);
+  app.use('/api/blocklist', blocklistRoutes);
+  app.use('/api/dashboard', dashboardRoutes);
+  app.use('/api/audit', auditRoutes);
+  app.use('/api/mitre', mitreRoutes);
   app.use('/api', protectedDemoRoutes);
 
   app.use(notFoundHandler);

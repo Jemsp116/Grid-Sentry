@@ -1,0 +1,14 @@
+# Grid Sentry SSH target — deliberately permissive password auth for the demo.
+Port 22
+AddressFamily inet
+PermitRootLogin no
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+# No PAM: sshd authenticates directly against /etc/shadow. Avoids PAM-in-container
+# flakiness and still emits standard "Failed/Accepted password" auth logs.
+UsePAM no
+UseDNS no
+PrintMotd no
+LogLevel INFO
+Subsystem sftp /usr/lib/openssh/sftp-server
