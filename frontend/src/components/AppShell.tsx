@@ -14,6 +14,8 @@ const NAV_ITEMS = [
   { to: '/rules', label: 'Rules', icon: '⚙' },
   { to: '/blocklist', label: 'IP Blocklist', icon: '⊘' },
   { to: '/users', label: 'Users', icon: '👤' },
+  { to: '/connected-sources', label: 'Connected Sources', icon: '🔌' },
+  { to: '/settings/database', label: 'Database Settings', icon: '🗄' },
   { to: '/audit', label: 'Audit Log', icon: '📋' },
 ];
 

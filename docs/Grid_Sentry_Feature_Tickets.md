@@ -255,3 +255,25 @@ Add the ability to export a filtered set of alerts as PDF or CSV for a given dat
 - Every screen in the app (Overview, Alert Feed, Log Explorer, Rule Management, Blocklist, Audit Log) consistently uses the color palette, typography, and component styles defined in the Frontend Specification Document — no screen left on default/unstyled components.
 
 **Dependencies:** TICKET-006, TICKET-008
+
+---
+
+### TICKET-016: Bring Your Own MongoDB (BYODB) Connection
+
+**Priority:** Nice-to-have (large scope — treat as its own phase, not core V1/V2)
+
+**Description:**
+Allow a connected user to supply their own MongoDB connection credentials so their alert/rule/audit data is stored in their own database instead of Grid Sentry's shared Postgres. This is a significant architecture change involving encrypted credential storage, dynamic multi-tenant database connections, and a data access abstraction layer — see the Technical Architecture Document's "Bring Your Own Database" addendum for full design details before starting this ticket.
+
+**Acceptance Criteria:**
+- New `tenant_databases` table stores, per user: db_type, encrypted_connection_string, encryption_key_id, connection_status, last_verified_at.
+- Raw connection strings are never stored in plain text and are encrypted using a real key-management approach (cloud KMS or equivalent secrets manager) — not application-level encryption with a key stored in the same database.
+- A settings screen lets a user submit their MongoDB connection string; on submit, the backend tests the connection and stores only a `verified`/`failed` status — the credential itself is never logged, including in error logs.
+- Submitted connection strings are validated/restricted so they cannot be used to connect to internal or private network addresses on Grid Sentry's own infrastructure (SSRF protection).
+- A connection pool manager opens/reuses a MongoDB connection per tenant based on their decrypted credential, rather than a single shared connection.
+- The existing alert feed, rule management, and audit log features work correctly against a tenant's own MongoDB once connected, via a data access layer that abstracts the underlying database from the rest of the app.
+- A documented decision exists for what happens to raw log search/explorer functionality for BYODB tenants, given MongoDB is not optimized for full-text log search the way OpenSearch is.
+- A user can revoke/disconnect their MongoDB connection, after which Grid Sentry stops attempting to connect to it.
+- This feature is off by default and requires explicit, informed opt-in by the user, given the sensitivity of storing their database credentials.
+
+**Dependencies:** TICKET-001 (Auth), TICKET-002 (RBAC), TICKET-005 (Rule Engine), TICKET-006 (Alerts), TICKET-009 (Audit Log)

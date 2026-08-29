@@ -17,6 +17,9 @@ import { ApiError } from '../utils/ApiError.js';
  */
 const router = Router();
 
+import { findActiveApiKeyByHash, hashApiKey, updateApiKeyLastUsed } from '../models/apiKeys.model.js';
+import { checkApiKeyRateLimit } from '../utils/apiKeyRateLimiter.js';
+
 // ─── External Ingestion (API Key Protected) ───────────────────────────────────
 
 /**
@@ -28,34 +31,81 @@ const router = Router();
 router.post(
   '/ingest',
   asyncHandler(async (req, res) => {
-    const apiKey = req.headers['x-api-key'] || req.headers['x-api-token'];
-    if (!apiKey || apiKey !== env.INGEST_API_KEY) {
+    const rawApiKey = (req.headers['x-api-key'] || req.headers['x-api-token']) as string | undefined;
+    if (!rawApiKey || typeof rawApiKey !== 'string' || !rawApiKey.trim()) {
       throw ApiError.unauthorized('Invalid or missing X-API-Key header');
     }
 
+    const trimmedKey = rawApiKey.trim();
+    let apiKeyRecord = null;
+    let appName = 'external_website';
+
+    if (env.INGEST_API_KEY && trimmedKey === env.INGEST_API_KEY) {
+      appName = 'dev_ingest_key';
+    } else {
+      try {
+        const keyHash = hashApiKey(trimmedKey);
+        apiKeyRecord = await findActiveApiKeyByHash(keyHash);
+        if (apiKeyRecord) {
+          appName = apiKeyRecord.app_name;
+        }
+      } catch {}
+    }
+
+    if (!apiKeyRecord && (!env.INGEST_API_KEY || trimmedKey !== env.INGEST_API_KEY)) {
+      throw ApiError.unauthorized('Invalid or missing X-API-Key header');
+    }
+
+    const rateLimitKey = apiKeyRecord ? apiKeyRecord.id : 'dev_key';
+    const rateCheck = checkApiKeyRateLimit(rateLimitKey);
+    if (!rateCheck.allowed) {
+      throw ApiError.tooManyRequests('Rate limit exceeded for API key (max 100 requests/minute)');
+    }
+
     const payload = Array.isArray(req.body) ? req.body : [req.body];
+    if (payload.length === 0) {
+      throw ApiError.badRequest('No log events provided in request body');
+    }
+
+    const clientIpFallback = (
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      req.ip ||
+      '127.0.0.1'
+    ).replace(/^::ffff:/, '');
+
     const validEvents: any[] = [];
 
     for (const item of payload) {
-      if (!item || typeof item !== 'object') continue;
-      if (!item.event_type || typeof item.event_type !== 'string' || !item.event_type.trim()) {
-        throw ApiError.badRequest('Each log event must specify a non-empty string event_type');
+      if (!item || typeof item !== 'object') {
+        continue;
       }
+
+      const timestamp = item.timestamp || new Date().toISOString();
+      const event_type = (item.event_type || item.event || 'custom_event').toString().trim() || 'custom_event';
+      const source_ip = (item.source_ip || item.ip || clientIpFallback).toString().trim() || clientIpFallback;
+      const user_identifier = item.user_identifier || item.user || item.email || undefined;
+      const raw_message = item.raw_message || item.message || `Event: ${event_type}`;
+
       validEvents.push({
-        timestamp: item.timestamp,
-        event_type: item.event_type.trim(),
-        source_ip: item.source_ip,
-        user_identifier: item.user_identifier || item.user,
-        raw_message: item.raw_message,
-        details: item.details || {},
+        timestamp,
+        event_type,
+        source_ip,
+        user_identifier,
+        raw_message,
+        details: item.details || item.data || {},
       });
     }
 
     if (validEvents.length === 0) {
-      throw ApiError.badRequest('No valid log events provided in request body');
+      throw ApiError.badRequest('No valid log events found in request body');
     }
 
-    const count = await ingestExternalLogs(validEvents);
+    if (apiKeyRecord) {
+      updateApiKeyLastUsed(apiKeyRecord.id).catch(() => {});
+    }
+
+    const count = await ingestExternalLogs(validEvents, appName);
     res.status(200).json({ status: 'ok', ingested: count });
   }),
 );

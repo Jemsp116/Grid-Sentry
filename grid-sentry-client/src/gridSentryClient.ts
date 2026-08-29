@@ -110,7 +110,7 @@ export class GridSentryClient {
     const payload: LogEventPayload = {
       timestamp: details.timestamp || new Date().toISOString(),
       event_type: eventType.trim(),
-      source_ip: details.source_ip,
+      source_ip: details.source_ip || '127.0.0.1',
       user_identifier: details.user_identifier,
       raw_message: details.raw_message || `[SDK] ${eventType.trim()} event logged`,
       details: details.details || {},

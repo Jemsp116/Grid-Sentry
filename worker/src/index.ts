@@ -5,12 +5,47 @@ import { z } from 'zod';
  *
  * For TICKET-000 this process just boots, validates its environment, and runs a
  * heartbeat loop so `docker-compose up` shows a healthy worker container. The
- * real rule-evaluation logic (reading active rules from Postgres, querying new
+ * real rule-evaluation logic (reading active rules from MongoDB, querying new
  * log events in OpenSearch, writing alerts) arrives in TICKET-005.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+function loadDotenvFiles() {
+  const candidates = [
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), '../.env'),
+  ];
+  for (const filePath of candidates) {
+    if (fs.existsSync(filePath)) {
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const key = trimmed.slice(0, eqIdx).trim();
+            let val = trimmed.slice(eqIdx + 1).trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.slice(1, -1);
+            }
+            if (!process.env[key]) {
+              process.env[key] = val;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+}
+
+loadDotenvFiles();
+
 const EnvSchema = z.object({
-  DATABASE_URL: z.string().min(1),
+  MONGODB_URI: z.string().optional(),
+  DATABASE_URL: z.string().optional(),
   OPENSEARCH_NODE: z.string().url().default('http://opensearch:9200'),
   POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
 });

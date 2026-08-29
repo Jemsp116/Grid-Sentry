@@ -15,6 +15,9 @@ import blocklistRoutes from './routes/blocklist.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import auditRoutes from './routes/audit.routes.js';
 import mitreRoutes from './routes/mitre.routes.js';
+import apiKeysRoutes from './routes/apiKeys.routes.js';
+import tenantDbRoutes from './routes/tenantDb.routes.js';
+import sdkRoutes from './routes/sdk.routes.js';
 
 /**
  * Builds the Express app WITHOUT starting a listener, so tests can import it
@@ -25,7 +28,23 @@ export function createApp() {
 
   // Security headers. CSP is left default-off here since the API serves JSON
   // only; the frontend sets its own CSP.
-  app.use(helmet());
+  app.use(helmet({ crossOriginResourcePolicy: false }));
+
+  // Allow open CORS for public SDK delivery and external log ingestion,
+  // while securing console dashboard routes with credentials.
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/logs/ingest') || req.path.startsWith('/api/sdk')) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, x-api-key, Authorization');
+      if (req.method === 'OPTIONS') {
+        res.sendStatus(204);
+        return;
+      }
+    }
+    next();
+  });
+
   app.use(
     cors({
       origin: env.CORS_ORIGIN,
@@ -36,6 +55,7 @@ export function createApp() {
   app.use(cookieParser());
 
   // Routes (all under /api)
+  app.use('/api/sdk', sdkRoutes);
   app.use('/api/health', healthRoutes);
   app.use('/api/auth', authRoutes);
   app.use('/api/logs', logsRoutes);
@@ -46,6 +66,8 @@ export function createApp() {
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/audit', auditRoutes);
   app.use('/api/mitre', mitreRoutes);
+  app.use('/api/api-keys', apiKeysRoutes);
+  app.use('/api/tenant-db', tenantDbRoutes);
   app.use('/api', protectedDemoRoutes);
 
   app.use(notFoundHandler);

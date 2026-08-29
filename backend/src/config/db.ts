@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
+import dns from 'node:dns';
 import { env } from './env.js';
 import { logger } from './logger.js';
+
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch {
+  // Ignore fallback if setServers not permitted
+}
 
 let isConnected = false;
 

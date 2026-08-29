@@ -10,6 +10,8 @@ import UserManagement from './pages/UserManagement.js';
 import IPBlocklist from './pages/IPBlocklist.js';
 import AuditLog from './pages/AuditLog.js';
 import MitreMatrix from './pages/MitreMatrix.js';
+import ConnectedSources from './pages/ConnectedSources.js';
+import DatabaseSettings from './pages/DatabaseSettings.js';
 import AppShell from './components/AppShell.js';
 
 export default function App() {
@@ -41,6 +43,8 @@ export default function App() {
           <Route path="/logs" element={<LogExplorer />} />
           <Route path="/rules" element={<RuleManagement />} />
           <Route path="/users" element={<UserManagement />} />
+          <Route path="/connected-sources" element={<ConnectedSources />} />
+          <Route path="/settings/database" element={<DatabaseSettings />} />
           <Route path="/blocklist" element={<IPBlocklist />} />
           <Route path="/audit" element={<AuditLog />} />
           <Route path="*" element={<Navigate to="/" replace />} />

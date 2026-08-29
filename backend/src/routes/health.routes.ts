@@ -8,9 +8,8 @@ const router = Router();
 
 /**
  * GET /api/health — liveness + dependency status.
- * Returns 200 when the API process is up. `dependencies` reports Postgres and
- * OpenSearch reachability without failing the whole check (the frontend
- * placeholder page in TICKET-000 only needs a 200 here).
+ * Returns 200 when the API process is up. `dependencies` reports MongoDB and
+ * OpenSearch reachability without failing the whole check.
  * `ingestion` reports the current doc count in soc-logs-* (TICKET-003).
  */
 router.get(
@@ -28,7 +27,7 @@ router.get(
 
     res.status(200).json({
       status: 'ok',
-      dependencies: { postgres: db, opensearch },
+      dependencies: { mongodb: db, opensearch },
       ingestion: { docCount },
       time: new Date().toISOString(),
     });

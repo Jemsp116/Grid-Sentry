@@ -248,3 +248,34 @@ VITE_API_BASE_URL=http://localhost:4000/api
 - **GeoIP database (MaxMind GeoLite2) requires a free account to download** — it is not bundled and must be fetched separately before first run; check current MaxMind license terms before redistributing it in any public repo.
 - **The rule engine's `match_conditions` JSONB must never accept raw code or regex from the UI without validation** — always validate against a fixed enum of allowed fields/operators server-side before compiling to an OpenSearch query, even though the frontend already constrains the rule builder UI (never trust client-side validation alone).
 - **Session revocation check adds a DB read on every authenticated request** (checking `refresh_tokens.revoked`) — acceptable at this project's scale, but worth knowing this is the tradeoff for being able to instantly kill a suspended user's access.
+
+---
+
+## 5. Addendum: Bring Your Own Database (BYODB) — Optional Future Architecture
+
+This section describes an optional, larger-scope extension: letting a connected user supply their own MongoDB credentials so their data is stored in their own database instead of Grid Sentry's shared Postgres/OpenSearch. This is a significant scope increase — treat it as a distinct phase, not part of the core V1/V2 build.
+
+### New table: `tenant_databases`
+Stores each user's encrypted database connection details.
+- `id` (PK)
+- `user_id` (FK → `users.id`)
+- `db_type` — e.g. `mongodb` (kept as a field, not hardcoded, in case other DB types are supported later)
+- `encrypted_connection_string` — the connection string, encrypted at rest (never stored in plain text)
+- `encryption_key_id` — reference to which key in your key-management system encrypted this value, so keys can be rotated without breaking old entries
+- `connection_status` — `pending`, `verified`, `failed`
+- `last_verified_at`
+- `created_at`
+
+**Relationship:** One user has at most one active tenant database connection.
+
+### Architecture components required
+1. **Encryption/key management layer** — connection strings must be encrypted using a real key-management approach (cloud KMS or a self-hosted secrets manager), not application-level encryption with a key stored alongside the data it protects.
+2. **Connection pool manager** — dynamically opens/reuses a MongoDB connection per tenant based on their decrypted credential, rather than a single hardcoded connection shared by all users.
+3. **Data access abstraction layer** — the rest of the app (alert feed, rule engine, etc.) should call a data-access interface that doesn't know or care whether a given tenant's data lives in shared Postgres or their own MongoDB.
+4. **SSRF protection** — validate/restrict submitted connection strings so they cannot be used to make Grid Sentry's server connect to internal/private network addresses.
+5. **Connection testing at setup** — verify the connection works when the user submits it, storing only a status (`verified`/`failed`), never logging the credential itself anywhere, including error logs.
+
+### Known tradeoffs
+- MongoDB is not built for fast full-text log search the way OpenSearch is — raw log search/explorer functionality may need a different approach per tenant, or may need to stay on shared OpenSearch even if structured data (alerts, rules) moves to the tenant's own MongoDB.
+- This introduces a much larger security surface area (storing other users' database credentials) than the rest of the V1/V2 build — it should be scoped and reviewed as its own security-critical phase, not bolted on incrementally.
+

@@ -21,7 +21,7 @@ import {
 
 interface HealthResponse {
   status: string;
-  dependencies: { postgres: boolean; opensearch: boolean };
+  dependencies: { mongodb: boolean; opensearch: boolean };
   ingestion?: { docCount: number };
   time: string;
 }
@@ -201,7 +201,7 @@ export default function Overview() {
         <div className="rounded-card border border-border-default bg-bg-surface p-5">
           <div className="flex items-center justify-between text-xs text-text-secondary">
             <span>Cluster Health</span>
-            <span className="font-mono opacity-60">Postgres + OS</span>
+            <span className="font-mono opacity-60">MongoDB + OS</span>
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="font-mono text-lg font-bold text-severity-resolved flex items-center gap-1.5">

@@ -242,6 +242,7 @@ export interface ExternalLogPayload {
   source_ip?: string;
   user_identifier?: string;
   raw_message?: string;
+  log_source?: string;
   details?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -249,7 +250,7 @@ export interface ExternalLogPayload {
 /**
  * Bulk index external log events sent by the Grid Sentry Client SDK (TICKET-015).
  */
-export async function ingestExternalLogs(events: ExternalLogPayload[]): Promise<number> {
+export async function ingestExternalLogs(events: ExternalLogPayload[], defaultLogSource?: string): Promise<number> {
   if (!Array.isArray(events) || events.length === 0) return 0;
 
   const indexName = `soc-logs-${new Date().toISOString().slice(0, 7)}`;
@@ -260,7 +261,7 @@ export async function ingestExternalLogs(events: ExternalLogPayload[]): Promise<
     const doc = {
       '@timestamp': ts,
       timestamp: ts,
-      log_source: 'external_client_sdk',
+      log_source: ev.log_source || defaultLogSource || 'external_client_sdk',
       event_type: ev.event_type,
       source_ip: ev.source_ip || '127.0.0.1',
       ssh_user: ev.user_identifier || null,

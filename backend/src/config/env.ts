@@ -34,7 +34,40 @@ const EnvSchema = z.object({
   INGEST_API_KEY: z.string().default('gs_live_secret_key_2026'),
 });
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+function loadDotenvFiles() {
+  const candidates = [
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), '../.env'),
+  ];
+  for (const filePath of candidates) {
+    if (fs.existsSync(filePath)) {
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const key = trimmed.slice(0, eqIdx).trim();
+            let val = trimmed.slice(eqIdx + 1).trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.slice(1, -1);
+            }
+            if (!process.env[key]) {
+              process.env[key] = val;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+}
+
 function loadEnv() {
+  loadDotenvFiles();
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues

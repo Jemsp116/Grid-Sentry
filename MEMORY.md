@@ -4,7 +4,7 @@
 > first. It captures decisions, current status, how to run, and what's next —
 > everything not obvious from the code alone.
 >
-> _Last updated: 2026-08-28 (after MONGODB DATABASE MIGRATION & TICKETS 000-015 COMPLETE)._
+> _Last updated: 2026-08-28 (after EXTERNAL DATA CONNECTIONS & TICKETS 000-016 COMPLETE)._
 
 ---
 
@@ -59,11 +59,12 @@ Access, Frontend Spec, and Feature Tickets (TICKET-000 → 013).
 - **011 Threat Intelligence Enrichment (AbuseIPDB / OTX)** — Threat Intelligence service & 24h TTL cache (`threatIntel.ts`) querying AbuseIPDB API for source IP reputation (Abuse Confidence Score 0-100%, report count, ISP, usage type, country) with fault-tolerant heuristic fallback for offline demo mode. Threat Intel API endpoint (`GET /api/alerts/ip-intel/:ip`). On-demand Threat Intelligence Panel on the Alert Detail page (`AlertDetail.tsx`) with abuse confidence meter, ISP/host metadata, report count, and country flag.
 - **012 Email & Slack Critical Alert Notifications** — Automated Notification Dispatcher (`notifier.ts`) formatting rich Slack Block Kit payloads (`#E53E3E` critical color, Rule Name, Source IP, Target Host, and deep-link back to the SOC Alert Detail UI) and dispatching via HTTPS POST to `SLACK_WEBHOOK_URL` and email to `ALERT_EMAIL_RECIPIENT`. Integrated into worker rule evaluator (`ruleEvaluator.ts`) for non-blocking execution when critical/high severity alerts fire.
 - **013 Report Export & Dark-Mode Theming Polish** — Alert report export endpoint (`GET /api/alerts/export`) supporting CSV and JSON downloads with full query filter preservation (`severity`, `status`, `sourceIp`, `mitreId`). Frontend Export CSV & Export JSON action buttons on the Alert Feed (`AlertFeed.tsx` & `api/alerts.ts`). Comprehensive dark-mode SOC theme audit across all 9 pages.
-- **015 Grid Sentry Client Library & External Ingestion API** — External log ingestion REST endpoint (`POST /api/logs/ingest`) authenticated via `X-API-Key`. Standalone installable Node.js SDK package (`grid-sentry-client`) featuring `gridSentry.init()`, `gridSentry.log()`, `gridSentry.flush()`, fire-and-forget 1-retry delivery safety, optional memory queue request batching, TypeScript autocomplete, and explicit server-side usage documentation.
-- **MongoDB Database Layer Migration** — Replaced PostgreSQL with MongoDB 7.0 (`mongo:7.0` container, Mongoose ODM). Mongoose schemas in `backend/src/config/mongoSchemas.ts` for `users`, `refresh_tokens`, `rules`, `alerts`, `alert_notes`, `ip_blocklist`, and `audit_log`.
+- **015 Grid Sentry Client Library & External Ingestion API** — External log ingestion REST endpoint (`POST /api/logs/ingest`) authenticated via hashed `X-API-Key`. Standalone installable Node.js SDK package (`grid-sentry-client`) featuring `gridSentry.init()`, `gridSentry.log()`, `gridSentry.flush()`, fire-and-forget 1-retry delivery safety, optional memory queue request batching, TypeScript autocomplete, and explicit server-side usage documentation. Admin UI screen (`ConnectedSources.tsx`) for API key management with single-show raw key copy modal.
+- **016 Bring Your Own MongoDB (BYODB) Connection** — Opt-in tenant database connection manager featuring AES-256-GCM KMS authenticated encryption (`kmsEncryption.ts`), strict DNS/IP CIDR SSRF validation (`ssrfGuard.ts`), per-tenant Mongoose connection pool manager (`tenantConnectionManager.ts`), unified Data Access Abstraction Layer (`tenantDataAccess.ts`), tenant DB management API (`POST/GET/DELETE /api/tenant-db/*`), Database Settings React page (`DatabaseSettings.tsx`), and architectural decision documentation (`BYODB_LOG_SEARCH_DECISION.md`).
+- **MongoDB Database Layer Migration** — Replaced PostgreSQL with MongoDB 7.0 (`mongo:7.0` container, Mongoose ODM). Mongoose schemas in `backend/src/config/mongoSchemas.ts` for `users`, `refresh_tokens`, `rules`, `alerts`, `alert_notes`, `ip_blocklist`, `audit_log`, `api_keys`, and `tenant_databases`.
 
 **Verification (all green):**
-MongoDB container ready · SDK build clean · **5/5 SDK Vitest pass** · `backend` tsc clean · `worker` tsc clean ·
+MongoDB container ready · SDK build clean · **5/5 SDK Vitest pass** · **7/7 Backend Vitest pass** · `backend` tsc clean · `worker` tsc clean ·
 `frontend` tsc + vite build clean · `docker compose config` valid.
 
 ## 4. Key design choices to preserve

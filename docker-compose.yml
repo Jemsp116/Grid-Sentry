@@ -47,12 +47,10 @@ services:
     container_name: soc_backend
     restart: unless-stopped
     env_file:
-      - ./backend/.env
+      - ./.env
     ports:
       - "4000:4000"
     depends_on:
-      mongodb:
-        condition: service_healthy
       opensearch:
         condition: service_healthy
     volumes:
@@ -64,10 +62,8 @@ services:
     container_name: soc_worker
     restart: unless-stopped
     env_file:
-      - ./worker/.env
+      - ./.env
     depends_on:
-      mongodb:
-        condition: service_healthy
       opensearch:
         condition: service_healthy
     volumes:
@@ -79,7 +75,7 @@ services:
     container_name: soc_frontend
     restart: unless-stopped
     env_file:
-      - ./frontend/.env
+      - ./.env
     ports:
       - "3000:3000"
     depends_on:

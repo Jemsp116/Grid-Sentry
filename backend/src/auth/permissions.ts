@@ -26,7 +26,9 @@ export type Permission =
   | 'rules:write'
   | 'users:read'
   | 'users:write' // create / suspend / change role
-  | 'audit:read';
+  | 'audit:read'
+  | 'apikeys:read'
+  | 'apikeys:write';
 
 /** Permissions granted to a Viewer — read-only visibility. */
 const VIEWER: Permission[] = ['dashboard:read', 'logs:read', 'geoip:read', 'alerts:read'];
@@ -39,7 +41,7 @@ const ANALYST: Permission[] = [
   'blocklist:write',
 ];
 
-/** Admin = Analyst + rule management, user management, audit log. */
+/** Admin = Analyst + rule management, user management, audit log, api keys. */
 const ADMIN: Permission[] = [
   ...ANALYST,
   'rules:read',
@@ -47,6 +49,8 @@ const ADMIN: Permission[] = [
   'users:read',
   'users:write',
   'audit:read',
+  'apikeys:read',
+  'apikeys:write',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, ReadonlyArray<Permission>> = {

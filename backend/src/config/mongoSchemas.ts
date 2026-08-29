@@ -201,3 +201,64 @@ const AuditLogSchema = new Schema<IAuditLogDoc>({
 export const AuditLogModel: Model<IAuditLogDoc> =
   (mongoose.models.AuditLog as Model<IAuditLogDoc>) ||
   mongoose.model<IAuditLogDoc>('AuditLog', AuditLogSchema);
+
+// ─── 8. API Key Schema ──────────────────────────────────────────────────────
+export interface IApiKeyDoc extends Document {
+  id: number;
+  app_name: string;
+  key_hash: string;
+  is_active: boolean;
+  created_by: number;
+  last_used_at?: Date | null;
+  created_at: Date;
+}
+
+const ApiKeySchema = new Schema<IApiKeyDoc>({
+  id: { type: Number, unique: true, index: true },
+  app_name: { type: String, required: true },
+  key_hash: { type: String, required: true, unique: true, index: true },
+  is_active: { type: Boolean, default: true, index: true },
+  created_by: { type: Number, required: true, index: true },
+  last_used_at: { type: Date, default: null },
+  created_at: { type: Date, default: Date.now },
+});
+
+export const ApiKeyModel: Model<IApiKeyDoc> =
+  (mongoose.models.ApiKey as Model<IApiKeyDoc>) ||
+  mongoose.model<IApiKeyDoc>('ApiKey', ApiKeySchema);
+
+// ─── 9. Tenant Database (BYODB) Schema ──────────────────────────────────────
+export interface ITenantDatabaseDoc extends Document {
+  id: number;
+  user_id: number;
+  db_type: 'mongodb';
+  encrypted_connection_string: string;
+  encryption_key_id: string;
+  connection_status: 'pending' | 'verified' | 'failed';
+  last_verified_at?: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const TenantDatabaseSchema = new Schema<ITenantDatabaseDoc>({
+  id: { type: Number, unique: true, index: true },
+  user_id: { type: Number, required: true, unique: true, index: true },
+  db_type: { type: String, enum: ['mongodb'], default: 'mongodb' },
+  encrypted_connection_string: { type: String, required: true },
+  encryption_key_id: { type: String, required: true, default: 'kms-key-v1' },
+  connection_status: {
+    type: String,
+    enum: ['pending', 'verified', 'failed'],
+    default: 'pending',
+    index: true,
+  },
+  last_verified_at: { type: Date, default: null },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+export const TenantDatabaseModel: Model<ITenantDatabaseDoc> =
+  (mongoose.models.TenantDatabase as Model<ITenantDatabaseDoc>) ||
+  mongoose.model<ITenantDatabaseDoc>('TenantDatabase', TenantDatabaseSchema);
+
+

@@ -29,4 +29,7 @@ export class ApiError extends Error {
   static conflict(message: string, code = 'conflict') {
     return new ApiError(409, code, message);
   }
+  static tooManyRequests(message = 'Rate limit exceeded', code = 'too_many_requests') {
+    return new ApiError(429, code, message);
+  }
 }
