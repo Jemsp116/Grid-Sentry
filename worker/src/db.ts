@@ -5,7 +5,7 @@ try {
   dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
 } catch {}
 
-const mongodbUri = process.env.MONGODB_URI || process.env.DATABASE_URL || 'mongodb://mongodb:27017/gridsentry';
+const mongodbUri = process.env.MONGODB_URI || 'mongodb://mongodb:27017/gridsentry';
 
 let isConnected = false;
 

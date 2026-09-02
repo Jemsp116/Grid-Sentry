@@ -6,7 +6,6 @@ import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
-import protectedDemoRoutes from './routes/protected.demo.routes.js';
 import logsRoutes from './routes/logs.routes.js';
 import rulesRoutes from './routes/rules.routes.js';
 import alertsRoutes from './routes/alerts.routes.js';
@@ -68,7 +67,6 @@ export function createApp() {
   app.use('/api/mitre', mitreRoutes);
   app.use('/api/api-keys', apiKeysRoutes);
   app.use('/api/tenant-db', tenantDbRoutes);
-  app.use('/api', protectedDemoRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

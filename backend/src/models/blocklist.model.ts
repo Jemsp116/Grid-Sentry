@@ -1,10 +1,10 @@
 import {
   IPBlocklistModel,
-  RuleModel,
-  UserModel,
   getNextSequence,
   type IIPBlocklistDoc,
+  type IRuleDoc,
 } from '../config/mongoSchemas.js';
+import { loadRules, loadUserEmails } from './lookups.js';
 
 export interface BlocklistRow {
   id: number;
@@ -22,10 +22,15 @@ export interface BlocklistWithMetadata extends BlocklistRow {
   type: 'manual' | 'rule';
 }
 
-async function docToMetadata(doc: IIPBlocklistDoc): Promise<BlocklistWithMetadata> {
-  const rule = doc.triggered_by_rule_id ? await RuleModel.findOne({ id: doc.triggered_by_rule_id }) : null;
-  const user = doc.added_by ? await UserModel.findOne({ id: doc.added_by }) : null;
-
+/**
+ * Builds an enriched blocklist row from pre-loaded rule/user maps. Synchronous
+ * by design — see `models/lookups.ts`.
+ */
+function docToMetadata(
+  doc: IIPBlocklistDoc,
+  rules: Map<number, IRuleDoc>,
+  userEmails: Map<number, string>,
+): BlocklistWithMetadata {
   return {
     id: doc.id,
     ip_address: doc.ip_address,
@@ -34,15 +39,30 @@ async function docToMetadata(doc: IIPBlocklistDoc): Promise<BlocklistWithMetadat
     added_by: doc.added_by ?? null,
     expires_at: doc.expires_at ?? null,
     created_at: doc.created_at,
-    rule_name: rule?.name ?? null,
-    added_by_email: user?.email ?? null,
+    rule_name: doc.triggered_by_rule_id
+      ? rules.get(doc.triggered_by_rule_id)?.name ?? null
+      : null,
+    added_by_email: doc.added_by ? userEmails.get(doc.added_by) ?? null : null,
     type: doc.triggered_by_rule_id ? 'rule' : 'manual',
   };
 }
 
+/** Enriches a single blocklist doc, batching its two lookups. */
+async function enrichOne(doc: IIPBlocklistDoc): Promise<BlocklistWithMetadata> {
+  const [rules, userEmails] = await Promise.all([
+    loadRules([doc.triggered_by_rule_id]),
+    loadUserEmails([doc.added_by]),
+  ]);
+  return docToMetadata(doc, rules, userEmails);
+}
+
 export async function getBlocklist(): Promise<BlocklistWithMetadata[]> {
   const docs = await IPBlocklistModel.find().sort({ created_at: -1 });
-  return await Promise.all(docs.map(docToMetadata));
+  const [rules, userEmails] = await Promise.all([
+    loadRules(docs.map((d) => d.triggered_by_rule_id)),
+    loadUserEmails(docs.map((d) => d.added_by)),
+  ]);
+  return docs.map((d) => docToMetadata(d, rules, userEmails));
 }
 
 export async function findByIp(ipAddress: string): Promise<BlocklistRow | null> {
@@ -68,7 +88,7 @@ export async function addBlocklistIp(
   const cleanIp = ipAddress.trim();
   const existingDoc = await IPBlocklistModel.findOne({ ip_address: cleanIp });
   if (existingDoc) {
-    const entry = await docToMetadata(existingDoc);
+    const entry = await enrichOne(existingDoc);
     return { entry, alreadyBlocked: true };
   }
 
@@ -81,7 +101,7 @@ export async function addBlocklistIp(
     expires_at: expiresAt ? new Date(expiresAt) : null,
   });
 
-  const entry = await docToMetadata(doc);
+  const entry = await enrichOne(doc);
   return { entry, alreadyBlocked: false };
 }
 

@@ -138,15 +138,6 @@ async function evaluateSingleRule(rule: ActiveRule): Promise<number> {
         action: rule.action_on_trigger,
       });
 
-      if (['critical', 'high'].includes(rule.severity)) {
-        log('DISPATCHING CRITICAL ALERT NOTIFICATION', {
-          alertId,
-          ruleName: rule.name,
-          sourceIp,
-          severity: rule.severity,
-        });
-      }
-
       if (rule.action_on_trigger === 'alert_and_block_ip') {
         let blockDoc = await WorkerBlocklistModel.findOne({ ip_address: sourceIp });
         if (blockDoc) {

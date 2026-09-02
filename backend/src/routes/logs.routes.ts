@@ -3,9 +3,19 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { getIngestStats, searchLogs, getLogById, ingestExternalLogs } from '../utils/opensearch.queries.js';
+import {
+  getIngestStats,
+  searchLogs,
+  getLogById,
+  ingestExternalLogs,
+  type ExternalLogPayload,
+} from '../utils/opensearch.queries.js';
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
+import { parseOrThrow } from '../utils/validate.js';
+import { logger } from '../config/logger.js';
+import { findActiveApiKeyByHash, hashApiKey, updateApiKeyLastUsed } from '../models/apiKeys.model.js';
+import { checkApiKeyRateLimit } from '../utils/apiKeyRateLimiter.js';
 
 /**
  * Log-related API routes.
@@ -16,9 +26,6 @@ import { ApiError } from '../utils/ApiError.js';
  * TICKET-015: `POST /ingest` — external log ingestion API for Grid Sentry Client SDK.
  */
 const router = Router();
-
-import { findActiveApiKeyByHash, hashApiKey, updateApiKeyLastUsed } from '../models/apiKeys.model.js';
-import { checkApiKeyRateLimit } from '../utils/apiKeyRateLimiter.js';
 
 // ─── External Ingestion (API Key Protected) ───────────────────────────────────
 
@@ -37,23 +44,28 @@ router.post(
     }
 
     const trimmedKey = rawApiKey.trim();
+    const isDevKey = Boolean(env.INGEST_API_KEY) && trimmedKey === env.INGEST_API_KEY;
+
     let apiKeyRecord = null;
     let appName = 'external_website';
 
-    if (env.INGEST_API_KEY && trimmedKey === env.INGEST_API_KEY) {
+    if (isDevKey) {
       appName = 'dev_ingest_key';
     } else {
       try {
-        const keyHash = hashApiKey(trimmedKey);
-        apiKeyRecord = await findActiveApiKeyByHash(keyHash);
+        apiKeyRecord = await findActiveApiKeyByHash(hashApiKey(trimmedKey));
         if (apiKeyRecord) {
           appName = apiKeyRecord.app_name;
         }
-      } catch {}
-    }
+      } catch (err) {
+        logger.warn('API key lookup failed during ingest', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
-    if (!apiKeyRecord && (!env.INGEST_API_KEY || trimmedKey !== env.INGEST_API_KEY)) {
-      throw ApiError.unauthorized('Invalid or missing X-API-Key header');
+      if (!apiKeyRecord) {
+        throw ApiError.unauthorized('Invalid or missing X-API-Key header');
+      }
     }
 
     const rateLimitKey = apiKeyRecord ? apiKeyRecord.id : 'dev_key';
@@ -74,7 +86,7 @@ router.post(
       '127.0.0.1'
     ).replace(/^::ffff:/, '');
 
-    const validEvents: any[] = [];
+    const validEvents: ExternalLogPayload[] = [];
 
     for (const item of payload) {
       if (!item || typeof item !== 'object') {
@@ -166,15 +178,7 @@ router.get(
   authenticate,
   requirePermission('logs:read'),
   asyncHandler(async (req, res) => {
-    const parsed = SearchQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      const issues = parsed.error.issues
-        .map((i) => `${i.path.join('.')}: ${i.message}`)
-        .join('; ');
-      throw ApiError.badRequest(`Invalid query parameters: ${issues}`);
-    }
-
-    const result = await searchLogs(parsed.data);
+    const result = await searchLogs(parseOrThrow(SearchQuerySchema, req.query, 'query parameters'));
     res.status(200).json({ status: 'ok', data: result });
   }),
 );

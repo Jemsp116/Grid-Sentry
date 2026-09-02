@@ -1,16 +1,21 @@
-import { z } from 'zod';
-
-/**
- * Grid Sentry detection worker — SKELETON (TICKET-000).
- *
- * For TICKET-000 this process just boots, validates its environment, and runs a
- * heartbeat loop so `docker-compose up` shows a healthy worker container. The
- * real rule-evaluation logic (reading active rules from MongoDB, querying new
- * log events in OpenSearch, writing alerts) arrives in TICKET-005.
- */
-
 import fs from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
+import { evaluateRulesOnce } from './ruleEvaluator.js';
+
+/**
+ * Grid Sentry detection worker.
+ *
+ * Polls MongoDB for active detection rules on a fixed interval, evaluates each
+ * one against recent OpenSearch log events, and writes alerts (optionally
+ * auto-blocking the source IP) when a rule's threshold is crossed. The actual
+ * evaluation lives in `ruleEvaluator.ts`; this file is just the boot sequence,
+ * env validation, and the poll loop.
+ *
+ * NOTE: `loadDotenvFiles` below is duplicated from `backend/src/config/env.ts`.
+ * `backend/` and `worker/` are independent npm packages with no workspace root,
+ * so there is nowhere to share it from — keep the two copies in sync.
+ */
 
 function loadDotenvFiles() {
   const candidates = [
@@ -45,7 +50,6 @@ loadDotenvFiles();
 
 const EnvSchema = z.object({
   MONGODB_URI: z.string().optional(),
-  DATABASE_URL: z.string().optional(),
   OPENSEARCH_NODE: z.string().url().default('http://opensearch:9200'),
   POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
 });
@@ -60,8 +64,6 @@ const env = parsed.data;
 function log(msg: string, meta?: Record<string, unknown>) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), svc: 'worker', msg, ...meta }));
 }
-
-import { evaluateRulesOnce } from './ruleEvaluator.js';
 
 let running = true;
 

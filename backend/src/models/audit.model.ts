@@ -1,4 +1,5 @@
-import { AuditLogModel, UserModel, getNextSequence, type IAuditLogDoc } from '../config/mongoSchemas.js';
+import { AuditLogModel, getNextSequence, type IAuditLogDoc } from '../config/mongoSchemas.js';
+import { loadUserEmails } from './lookups.js';
 
 export interface AuditLogRow {
   id: number;
@@ -29,12 +30,15 @@ export interface AuditLogsResponse {
   totalPages: number;
 }
 
-async function docToAuditRow(doc: IAuditLogDoc): Promise<AuditLogRow> {
-  const user = doc.user_id ? await UserModel.findOne({ id: doc.user_id }) : null;
+/**
+ * Builds an audit row from a pre-loaded user-email map. Synchronous by design —
+ * see `models/lookups.ts`.
+ */
+function docToAuditRow(doc: IAuditLogDoc, userEmails: Map<number, string>): AuditLogRow {
   return {
     id: doc.id,
     user_id: doc.user_id ?? null,
-    user_email: user?.email ?? null,
+    user_email: doc.user_id ? userEmails.get(doc.user_id) ?? null : null,
     action: doc.action,
     target_type: doc.target_type,
     target_id: doc.target_id ?? null,
@@ -65,7 +69,8 @@ export async function getAuditLogs(params: AuditLogFilterParams = {}): Promise<A
     .skip(skip)
     .limit(pageSize);
 
-  const logs = await Promise.all(docs.map(docToAuditRow));
+  const userEmails = await loadUserEmails(docs.map((d) => d.user_id));
+  const logs = docs.map((d) => docToAuditRow(d, userEmails));
 
   return {
     logs,

@@ -8,7 +8,9 @@ import {
   getNextSequence,
   type IAlertDoc,
   type IAlertNoteDoc,
+  type IRuleDoc,
 } from '../config/mongoSchemas.js';
+import { loadRules, loadUserEmails } from './lookups.js';
 
 export type AlertStatus = 'new' | 'investigating' | 'resolved' | 'false_positive';
 
@@ -54,9 +56,17 @@ export interface AlertFilterParams {
   pageSize?: number;
 }
 
-async function enrichAlertDoc(doc: IAlertDoc): Promise<AlertWithMetadata> {
-  const rule = await RuleModel.findOne({ id: doc.rule_id });
-  const user = doc.assigned_to ? await UserModel.findOne({ id: doc.assigned_to }) : null;
+/**
+ * Builds the enriched alert row from a doc plus pre-loaded rule/user maps.
+ * Synchronous by design — callers batch the lookups once per page via
+ * `loadRules` / `loadUserEmails` rather than querying per row.
+ */
+function enrichAlertDoc(
+  doc: IAlertDoc,
+  rules: Map<number, IRuleDoc>,
+  userEmails: Map<number, string>,
+): AlertWithMetadata {
+  const rule = rules.get(doc.rule_id);
 
   return {
     id: doc.id,
@@ -76,8 +86,17 @@ async function enrichAlertDoc(doc: IAlertDoc): Promise<AlertWithMetadata> {
     time_window_seconds: rule?.time_window_seconds || 60,
     action_on_trigger: rule?.action_on_trigger || 'alert_only',
     mitre_technique_id: rule?.mitre_technique_id ?? null,
-    assigned_to_email: user?.email ?? null,
+    assigned_to_email: doc.assigned_to ? userEmails.get(doc.assigned_to) ?? null : null,
   };
+}
+
+/** Enriches a single alert doc, batching its two lookups. */
+async function enrichOne(doc: IAlertDoc): Promise<AlertWithMetadata> {
+  const [rules, userEmails] = await Promise.all([
+    loadRules([doc.rule_id]),
+    loadUserEmails([doc.assigned_to]),
+  ]);
+  return enrichAlertDoc(doc, rules, userEmails);
 }
 
 export async function getAlerts(params: AlertFilterParams = {}): Promise<{
@@ -108,7 +127,11 @@ export async function getAlerts(params: AlertFilterParams = {}): Promise<{
     .skip(skip)
     .limit(pageSize);
 
-  const enrichedAlerts = await Promise.all(docs.map(enrichAlertDoc));
+  const [rules, userEmails] = await Promise.all([
+    loadRules(docs.map((d) => d.rule_id)),
+    loadUserEmails(docs.map((d) => d.assigned_to)),
+  ]);
+  const enrichedAlerts = docs.map((d) => enrichAlertDoc(d, rules, userEmails));
 
   return {
     alerts: enrichedAlerts,
@@ -121,7 +144,7 @@ export async function getAlerts(params: AlertFilterParams = {}): Promise<{
 
 export async function getAlertById(id: number): Promise<AlertWithMetadata | null> {
   const doc = await AlertModel.findOne({ id });
-  return doc ? await enrichAlertDoc(doc) : null;
+  return doc ? await enrichOne(doc) : null;
 }
 
 export async function updateAlertStatus(
@@ -133,27 +156,21 @@ export async function updateAlertStatus(
   if (assignedTo !== undefined) updateFields.assigned_to = assignedTo;
 
   const doc = await AlertModel.findOneAndUpdate({ id }, updateFields, { new: true });
-  return doc ? await enrichAlertDoc(doc) : null;
+  return doc ? await enrichOne(doc) : null;
 }
 
 export async function getAlertNotes(alertId: number): Promise<AlertNoteRow[]> {
   const noteDocs = await AlertNoteModel.find({ alert_id: alertId }).sort({ created_at: 1 });
-  
-  const notes = await Promise.all(
-    noteDocs.map(async (n: IAlertNoteDoc) => {
-      const u = await UserModel.findOne({ id: n.user_id });
-      return {
-        id: n.id,
-        alert_id: n.alert_id,
-        user_id: n.user_id,
-        user_email: u?.email || 'Unknown User',
-        note: n.note,
-        created_at: n.created_at,
-      };
-    }),
-  );
+  const userEmails = await loadUserEmails(noteDocs.map((n) => n.user_id));
 
-  return notes;
+  return noteDocs.map((n: IAlertNoteDoc) => ({
+    id: n.id,
+    alert_id: n.alert_id,
+    user_id: n.user_id,
+    user_email: userEmails.get(n.user_id) || 'Unknown User',
+    note: n.note,
+    created_at: n.created_at,
+  }));
 }
 
 export async function addAlertNote(

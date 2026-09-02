@@ -4,11 +4,10 @@ import { env } from '../config/env.js';
 const DEFAULT_KMS_KEY_ID = 'kms-key-v1';
 
 /**
- * Derives a 32-byte AES key from KMS secret configuration.
+ * Derives a 32-byte AES key from the validated KMS master key.
  */
 function getMasterKey(): Buffer {
-  const secret = process.env.KMS_MASTER_KEY || (env as any).KMS_MASTER_KEY || 'grid-sentry-byodb-kms-secret-master-key-2026';
-  return crypto.createHash('sha256').update(secret).digest();
+  return crypto.createHash('sha256').update(env.KMS_MASTER_KEY).digest();
 }
 
 /**

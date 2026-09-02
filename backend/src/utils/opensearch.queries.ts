@@ -1,7 +1,7 @@
 import { opensearch } from '../config/opensearch.js';
 import { logger } from '../config/logger.js';
 
-/** Index pattern for all SOC log indices (daily rollover). */
+/** Index pattern for all SOC log indices (monthly rollover: soc-logs-YYYY-MM). */
 export const SOC_LOGS_PATTERN = 'soc-logs-*';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
