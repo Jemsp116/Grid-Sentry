@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { useAuth, type Role } from '../context/AuthContext.js';
+import { useAuth } from '../context/AuthContext.js';
 import {
   fetchDashboardSummary,
   fetchGeoMetrics,
@@ -29,13 +29,6 @@ interface HealthResponse {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
 
-const PROBES: { label: string; path: string; method?: string; minRole: Role }[] = [
-  { label: 'View alerts', path: '/alerts', minRole: 'viewer' },
-  { label: 'Change alert status', path: '/alerts/1/status', method: 'PATCH', minRole: 'analyst' },
-  { label: 'Manage rules', path: '/rules', minRole: 'admin' },
-  { label: 'Manage users', path: '/users', minRole: 'admin' },
-];
-
 const SEVERITY_COLORS: Record<string, string> = {
   critical: '#E53E3E',
   high: '#DD6B20',
@@ -52,7 +45,6 @@ export default function Overview() {
 
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthErr, setHealthErr] = useState(false);
-  const [probeResults, setProbeResults] = useState<Record<string, number>>({});
   const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -86,21 +78,9 @@ export default function Overview() {
       .catch(() => setHealthErr(true));
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const entries = await Promise.all(
-        PROBES.map(async (p) => {
-          const res = await authFetch(p.path, { method: p.method ?? 'GET' });
-          return [p.path, res.status] as const;
-        }),
-      );
-      if (!cancelled) setProbeResults(Object.fromEntries(entries));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authFetch]);
+  const totalLogs = summary?.totalLogsProcessed ?? 0;
+  const totalAlerts = summary?.totalAlertsCount ?? 0;
+  const hasZeroActivity = !loading && summary !== null && totalLogs === 0 && totalAlerts === 0;
 
   // Bar chart dataset for Severity
   const severityChartData = summary
@@ -145,7 +125,7 @@ export default function Overview() {
           {user?.role === 'admin' && (
             <button
               onClick={() => setIsWizardOpen(true)}
-              className="flex items-center gap-1.5 rounded bg-accent-primary px-3 py-1.5 text-xs font-semibold text-bg-base hover:opacity-90 shadow-sm"
+              className="flex items-center gap-1.5 rounded bg-accent-primary px-3 py-1.5 text-xs font-semibold text-bg-base hover:opacity-90 shadow-sm transition-opacity"
             >
               <span>+</span>
               <span>Connect a Project</span>
@@ -180,6 +160,29 @@ export default function Overview() {
         </div>
       )}
 
+      {/* Zero Activity Onboarding Banner */}
+      {hasZeroActivity && (
+        <div className="rounded-xl border border-accent-primary/30 bg-bg-surface p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1.5">
+            <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
+              <span>📡</span> No Telemetry Stream Detected Yet
+            </h2>
+            <p className="text-xs text-text-secondary max-w-2xl leading-relaxed">
+              Your organization currently has zero incoming logs and zero security alerts. Connect an application, website, or log shipper to start streaming telemetry into your SIEM engine.
+            </p>
+          </div>
+
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setIsWizardOpen(true)}
+              className="shrink-0 rounded-lg bg-accent-primary px-4 py-2 text-xs font-semibold text-bg-base hover:opacity-90 transition-opacity shadow-sm"
+            >
+              Connect First Project →
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 4 Metric Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Logs Ingested */}
@@ -190,9 +193,11 @@ export default function Overview() {
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="font-mono text-2xl font-bold text-text-primary">
-              {summary ? summary.totalLogsProcessed.toLocaleString() : '—'}
+              {summary ? summary.totalLogsProcessed.toLocaleString() : '0'}
             </span>
-            <span className="text-[10px] font-mono text-severity-resolved">● Live stream</span>
+            <span className="text-[10px] font-mono text-severity-resolved">
+              {totalLogs > 0 ? '● Streaming' : '○ Waiting for logs'}
+            </span>
           </div>
         </div>
 
@@ -204,10 +209,10 @@ export default function Overview() {
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="font-mono text-2xl font-bold text-severity-high">
-              {summary ? summary.totalAlertsCount.toLocaleString() : '—'}
+              {summary ? summary.totalAlertsCount.toLocaleString() : '0'}
             </span>
             <span className="text-[10px] font-mono text-text-secondary">
-              {summary ? `${summary.statusBreakdown.new || 0} New` : ''}
+              {summary && summary.statusBreakdown.new ? `${summary.statusBreakdown.new} New` : '0 New'}
             </span>
           </div>
         </div>
@@ -220,7 +225,7 @@ export default function Overview() {
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="font-mono text-2xl font-bold text-severity-critical">
-              {summary ? summary.activeBlockedIpsCount.toLocaleString() : '—'}
+              {summary ? summary.activeBlockedIpsCount.toLocaleString() : '0'}
             </span>
             <span className="text-[10px] font-mono text-severity-critical font-semibold">
               Auto-shield active
@@ -240,7 +245,7 @@ export default function Overview() {
               {health ? health.status.toUpperCase() : healthErr ? 'DOWN' : 'ONLINE'}
             </span>
             <span className="text-[10px] font-mono text-text-secondary">
-              {health?.dependencies.opensearch ? 'All Online' : 'Connecting'}
+              {health?.dependencies?.opensearch ? 'All Online' : 'Active'}
             </span>
           </div>
         </div>
@@ -263,7 +268,7 @@ export default function Overview() {
             <div className="flex h-56 items-center justify-center">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-primary border-t-transparent" />
             </div>
-          ) : summary && summary.timeSeries.length > 0 ? (
+          ) : summary && summary.timeSeries.length > 0 && totalAlerts > 0 ? (
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={summary.timeSeries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -293,8 +298,9 @@ export default function Overview() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="flex h-56 flex-col items-center justify-center text-xs text-text-secondary">
-              No alert activity recorded in this time window.
+            <div className="flex h-56 flex-col items-center justify-center text-xs text-text-secondary space-y-2">
+              <span className="text-2xl opacity-40">📊</span>
+              <span>No alert activity recorded in this time window.</span>
             </div>
           )}
         </div>
@@ -310,7 +316,7 @@ export default function Overview() {
             <div className="flex h-56 items-center justify-center">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-primary border-t-transparent" />
             </div>
-          ) : (
+          ) : totalAlerts > 0 ? (
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={severityChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -328,6 +334,11 @@ export default function Overview() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          ) : (
+            <div className="flex h-56 flex-col items-center justify-center text-xs text-text-secondary space-y-2">
+              <span className="text-2xl opacity-40">🛡</span>
+              <span>No active severity alerts.</span>
+            </div>
           )}
         </div>
       </div>
@@ -342,7 +353,10 @@ export default function Overview() {
           </p>
 
           {!summary || summary.topAttackerIps.length === 0 ? (
-            <p className="text-xs text-text-secondary py-8 text-center">No attacker IP data available.</p>
+            <div className="py-12 text-center text-xs text-text-secondary space-y-1">
+              <span className="text-2xl block opacity-40">🌐</span>
+              <p>No attacker IPs detected.</p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -390,7 +404,10 @@ export default function Overview() {
           </p>
 
           {geoData.length === 0 ? (
-            <p className="text-xs text-text-secondary py-8 text-center">No geographic metrics available.</p>
+            <div className="py-12 text-center text-xs text-text-secondary space-y-1">
+              <span className="text-2xl block opacity-40">🗺</span>
+              <p>No geographic threat locations detected.</p>
+            </div>
           ) : (
             <div className="space-y-3 max-h-72 overflow-y-auto">
               {geoData.map((location) => (
@@ -415,33 +432,6 @@ export default function Overview() {
               ))}
             </div>
           )}
-        </div>
-      </div>
-
-      {/* System Probes Strip */}
-      <div className="rounded-card border border-border-default bg-bg-surface p-6">
-        <h2 className="mb-3 text-base font-semibold text-text-primary">RBAC & Subsystem Probes</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-xs font-mono">
-          {PROBES.map((p) => {
-            const status = probeResults[p.path];
-            const allowed = status === 200;
-            return (
-              <div key={p.path} className="flex items-center justify-between rounded border border-border-default bg-bg-base p-2.5">
-                <span>{p.label}</span>
-                <span
-                  className={`rounded border px-2 py-0.5 text-[10px] ${
-                    status === undefined
-                      ? 'border-border-default text-text-disabled'
-                      : allowed
-                        ? 'border-severity-resolved text-severity-resolved'
-                        : 'border-severity-critical text-severity-critical'
-                  }`}
-                >
-                  {status === undefined ? '…' : allowed ? 'ALLOWED (200)' : `DENIED (${status})`}
-                </span>
-              </div>
-            );
-          })}
         </div>
       </div>
 

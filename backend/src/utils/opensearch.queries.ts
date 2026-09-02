@@ -20,6 +20,7 @@ export interface LogSearchParams {
   logSource?: string;
   sourceIp?: string;
   outcome?: string;
+  orgId?: string;
   page: number;        // 1-based
   pageSize: number;    // max 500
 }
@@ -42,19 +43,30 @@ export interface LogSearchResult {
 
 /**
  * Return the total document count across all `soc-logs-*` indices.
- * Returns 0 when no indices exist yet (OpenSearch returns 404).
+ * Scoped to orgId if provided. Returns 0 when no indices or docs exist.
  */
-export async function getLogCount(): Promise<number> {
+export async function getLogCount(orgId?: string): Promise<number> {
   try {
-    const { body } = await opensearch.count({ index: SOC_LOGS_PATTERN });
-    return (body as { count: number }).count;
+    const body: Record<string, any> = {};
+    if (orgId) {
+      body.query = {
+        bool: {
+          should: [
+            { term: { org_id: orgId } },
+            { term: { 'org_id.keyword': orgId } },
+          ],
+          minimum_should_match: 1,
+        },
+      };
+    }
+    const { body: countBody } = await opensearch.count({ index: SOC_LOGS_PATTERN, ...(orgId ? { body } : {}) });
+    return (countBody as { count: number }).count;
   } catch (err: unknown) {
-    // 404 = no matching indices yet → that's fine, count is 0.
     if (isOpenSearchNotFound(err)) return 0;
     logger.error('getLogCount failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-    throw err;
+    return 0;
   }
 }
 
@@ -62,12 +74,25 @@ export async function getLogCount(): Promise<number> {
  * Aggregate ingestion statistics: total docs, latest timestamp, and breakdowns
  * by `outcome` and `log_source`. Used by the `/api/logs/ingest-stats` endpoint.
  */
-export async function getIngestStats(): Promise<IngestStats> {
+export async function getIngestStats(orgId?: string): Promise<IngestStats> {
   try {
+    const query: Record<string, any> = orgId
+      ? {
+          bool: {
+            should: [
+              { term: { org_id: orgId } },
+              { term: { 'org_id.keyword': orgId } },
+            ],
+            minimum_should_match: 1,
+          },
+        }
+      : { match_all: {} };
+
     const { body } = await opensearch.search({
       index: SOC_LOGS_PATTERN,
       body: {
         size: 0,
+        query,
         aggs: {
           latest: { max: { field: '@timestamp' } },
           by_outcome: { terms: { field: 'outcome', size: 10 } },
@@ -98,7 +123,12 @@ export async function getIngestStats(): Promise<IngestStats> {
     logger.error('getIngestStats failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-    throw err;
+    return {
+      totalDocs: 0,
+      latestTimestamp: null,
+      outcomeBreakdown: {},
+      logSourceBreakdown: {},
+    };
   }
 }
 
@@ -108,10 +138,23 @@ export async function getIngestStats(): Promise<IngestStats> {
  * Results are sorted by @timestamp descending (newest first).
  */
 export async function searchLogs(params: LogSearchParams): Promise<LogSearchResult> {
-  const { q, from, to, logSource, sourceIp, outcome, page, pageSize } = params;
+  const { q, from, to, logSource, sourceIp, outcome, orgId, page, pageSize } = params;
 
   const must: object[] = [];
   const filter: object[] = [];
+
+  // Scoped to calling organization if present
+  if (orgId) {
+    filter.push({
+      bool: {
+        should: [
+          { term: { org_id: orgId } },
+          { term: { 'org_id.keyword': orgId } },
+        ],
+        minimum_should_match: 1,
+      },
+    });
+  }
 
   // Full-text keyword search on raw_message
   if (q) {
@@ -129,7 +172,19 @@ export async function searchLogs(params: LogSearchParams): Promise<LogSearchResu
   }
 
   // Keyword field filters
-  if (logSource) filter.push({ term: { log_source: logSource } });
+  if (logSource) {
+    filter.push({
+      bool: {
+        should: [
+          { term: { log_source: logSource } },
+          { term: { project_name: logSource } },
+          { match: { log_source: logSource } },
+          { match: { project_name: logSource } },
+        ],
+        minimum_should_match: 1,
+      },
+    });
+  }
   if (sourceIp) filter.push({ term: { source_ip: sourceIp } });
   if (outcome) filter.push({ term: { outcome } });
 

@@ -24,7 +24,6 @@ export async function listAuditLogs(req: Request, res: Response): Promise<void> 
 
   if (!req.user) throw ApiError.unauthorized();
   const orgId = req.user.orgId;
-  await AuditModel.seedDemoAuditLogsIfEmpty(req.user.id, orgId);
 
   const result = await AuditModel.getAuditLogs({
     orgId,

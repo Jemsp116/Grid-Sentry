@@ -16,6 +16,11 @@ import { parseOrThrow } from '../utils/validate.js';
 import { logger } from '../config/logger.js';
 import { findActiveApiKeyByHash, hashApiKey, recordApiKeyIngestEvent } from '../models/apiKeys.model.js';
 import { checkApiKeyRateLimit } from '../utils/apiKeyRateLimiter.js';
+import {
+  writeTenantSourceLogs,
+  hasVerifiedTenantDb,
+  getTenantSourceLogs,
+} from '../services/tenantData.service.js';
 
 /**
  * Log-related API routes.
@@ -33,7 +38,10 @@ const router = Router();
  * POST /api/logs/ingest
  *
  * Ingest external logs sent by the grid-sentry-client SDK or third-party webhooks.
- * Authenticated via X-API-Key header.
+ * - Authenticated via X-API-Key header.
+ * - Stores raw telemetry directly into User's Private Database (BYODB) if configured.
+ * - Records connection metadata & event count metrics in Grid Sentry's central DB.
+ * - Indexes into OpenSearch for real-time SIEM detection rule evaluation.
  */
 router.post(
   '/ingest',
@@ -113,15 +121,44 @@ router.post(
       throw ApiError.badRequest('No valid log events found in request body');
     }
 
+    let isStoredInTenantDb = false;
+
+    // 1. If tenant has BYODB configured, write telemetry directly to User's Private Database
+    if (apiKeyRecord && apiKeyRecord.created_by) {
+      const hasTenantDb = await hasVerifiedTenantDb(apiKeyRecord.created_by);
+      if (hasTenantDb) {
+        const writeResult = await writeTenantSourceLogs(apiKeyRecord.created_by, validEvents, {
+          sourceId: apiKeyRecord.id,
+          appName,
+          orgId: apiKeyRecord.orgId,
+        });
+        isStoredInTenantDb = writeResult.success;
+      }
+    }
+
+    // 2. In Grid Sentry's central database, update ONLY the connection stats & metrics
     if (apiKeyRecord) {
       recordApiKeyIngestEvent(apiKeyRecord.id, validEvents.length).catch((err) => {
         logger.warn('Failed to record API key ingest timestamp', { error: String(err) });
       });
     }
 
+    // 3. Forward to OpenSearch for real-time SIEM rule detection
     const orgId = apiKeyRecord?.orgId ? apiKeyRecord.orgId.toString() : undefined;
-    const count = await ingestExternalLogs(validEvents, appName, orgId, appName);
-    res.status(200).json({ status: 'ok', ingested: count });
+    let count = validEvents.length;
+    try {
+      count = await ingestExternalLogs(validEvents, appName, orgId, appName);
+    } catch (err) {
+      logger.warn('OpenSearch log indexing skipped or degraded during ingest', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    res.status(200).json({
+      status: 'ok',
+      ingested: count,
+      storage: isStoredInTenantDb ? 'user_private_database' : 'siem_engine',
+    });
   }),
 );
 
@@ -152,8 +189,8 @@ router.get(
   '/ingest-stats',
   authenticate,
   requirePermission('logs:read'),
-  asyncHandler(async (_req, res) => {
-    const stats = await getIngestStats();
+  asyncHandler(async (req, res) => {
+    const stats = await getIngestStats(req.user?.orgId);
     res.status(200).json({
       status: 'ok',
       data: stats,
@@ -181,8 +218,44 @@ router.get(
   authenticate,
   requirePermission('logs:read'),
   asyncHandler(async (req, res) => {
-    const result = await searchLogs(parseOrThrow(SearchQuerySchema, req.query, 'query parameters'));
+    const parsed = parseOrThrow(SearchQuerySchema, req.query, 'query parameters');
+    const result = await searchLogs({ ...parsed, orgId: req.user?.orgId });
     res.status(200).json({ status: 'ok', data: result });
+  }),
+);
+
+/**
+ * GET /api/logs/:id
+ *
+ * Fetch a single log document by its OpenSearch _id. Used by the detail panel
+/**
+ * GET /api/logs/tenant-source-logs
+ *
+ * Fetch raw logs directly from the authenticated user's private BYODB MongoDB instance.
+ */
+router.get(
+  '/tenant-source-logs',
+  authenticate,
+  requirePermission('logs:read'),
+  asyncHandler(async (req, res) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const sourceId = req.query.sourceId ? parseInt(req.query.sourceId as string, 10) : undefined;
+    const appName = req.query.appName ? (req.query.appName as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const skip = req.query.skip ? parseInt(req.query.skip as string, 10) : 0;
+
+    const logs = await getTenantSourceLogs(req.user.id, {
+      sourceId: isNaN(sourceId as number) ? undefined : sourceId,
+      appName,
+      limit,
+      skip,
+    });
+
+    res.status(200).json({
+      status: 'ok',
+      source: 'user_private_database',
+      data: logs,
+    });
   }),
 );
 

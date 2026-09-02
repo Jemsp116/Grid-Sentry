@@ -13,6 +13,8 @@ export interface ApiKeyItem {
   first_event_at?: string | null;
   last_used_at: string | null;
   event_count?: number;
+  has_tenant_db?: boolean;
+  storage_destination?: 'tenant_db' | 'central_siem';
   created_at: string;
 }
 
@@ -29,6 +31,8 @@ export interface ApiKeyStatusResponse {
   first_event_at: string | null;
   last_used_at: string | null;
   event_count: number;
+  has_tenant_db?: boolean;
+  storage_destination?: 'tenant_db' | 'central_siem';
 }
 
 type AuthFetch = (path: string, init?: RequestInit) => Promise<Response>;

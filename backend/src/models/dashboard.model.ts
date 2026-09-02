@@ -49,22 +49,28 @@ export interface GeoLocationMetric {
   coordinates: [number, number];
 }
 
-export async function getDashboardSummary(lookbackHours = 24): Promise<DashboardSummaryData> {
+export async function getDashboardSummary(lookbackHours = 24, orgId?: string): Promise<DashboardSummaryData> {
   let totalLogsProcessed = 0;
   try {
-    totalLogsProcessed = await getLogCount();
+    totalLogsProcessed = await getLogCount(orgId);
   } catch {
     totalLogsProcessed = 0;
   }
 
-  const activeBlockedIpsCount = await IPBlocklistModel.countDocuments();
+  const orgFilter: Record<string, any> = orgId ? { orgId } : {};
+  const activeBlockedIpsCount = await IPBlocklistModel.countDocuments(orgFilter);
 
   const sinceDate = new Date(Date.now() - lookbackHours * 3600 * 1000);
-  const totalAlertsCount = await AlertModel.countDocuments({ created_at: { $gte: sinceDate } });
+  const matchFilter: Record<string, any> = {
+    ...orgFilter,
+    created_at: { $gte: sinceDate },
+  };
+
+  const totalAlertsCount = await AlertModel.countDocuments(matchFilter);
 
   // Severity breakdown
   const sevAgg = await AlertModel.aggregate([
-    { $match: { created_at: { $gte: sinceDate } } },
+    { $match: matchFilter },
     { $group: { _id: '$severity', count: { $sum: 1 } } },
   ]);
 
@@ -75,7 +81,7 @@ export async function getDashboardSummary(lookbackHours = 24): Promise<Dashboard
 
   // Status breakdown
   const statusAgg = await AlertModel.aggregate([
-    { $match: { created_at: { $gte: sinceDate } } },
+    { $match: matchFilter },
     { $group: { _id: '$status', count: { $sum: 1 } } },
   ]);
 
@@ -86,7 +92,7 @@ export async function getDashboardSummary(lookbackHours = 24): Promise<Dashboard
 
   // Top 10 Attacker IPs
   const topIpsAgg = await AlertModel.aggregate([
-    { $match: { created_at: { $gte: sinceDate } } },
+    { $match: matchFilter },
     {
       $group: {
         _id: '$source_ip',
@@ -118,7 +124,7 @@ export async function getDashboardSummary(lookbackHours = 24): Promise<Dashboard
 
   // Time series hourly buckets
   const timeSeriesAgg = await AlertModel.aggregate([
-    { $match: { created_at: { $gte: sinceDate } } },
+    { $match: matchFilter },
     {
       $group: {
         _id: {
@@ -157,16 +163,22 @@ export async function getDashboardSummary(lookbackHours = 24): Promise<Dashboard
   };
 }
 
-export async function getGeoMetrics(lookbackHours = 24): Promise<GeoLocationMetric[]> {
+export async function getGeoMetrics(lookbackHours = 24, orgId?: string): Promise<GeoLocationMetric[]> {
   const sinceDate = new Date(Date.now() - lookbackHours * 3600 * 1000);
+  const matchFilter: Record<string, any> = {
+    created_at: { $gte: sinceDate },
+    ...(orgId ? { orgId } : {}),
+  };
+
   const ipAgg = await AlertModel.aggregate([
-    { $match: { created_at: { $gte: sinceDate } } },
+    { $match: matchFilter },
     { $group: { _id: '$source_ip', count: { $sum: 1 } } },
   ]);
 
   const countryMap = new Map<string, GeoLocationMetric>();
 
   for (const row of ipAgg) {
+    if (!row._id) continue;
     const geo = lookupIp(row._id);
     const count = row.count;
 

@@ -60,25 +60,19 @@ export default function ConnectSourceWizard({ isOpen, onClose, onSuccess }: Conn
     }
   }, [isOpen]);
 
-  // Polling for Step 3
+  // Polling for Step 3 - keep polling even when connected to show live incrementing event count
   const pollStatus = useCallback(async () => {
     if (!keyData) return;
     try {
       const res = await fetchApiKeyStatus(authFetch, keyData.id);
       setStatusData(res);
-      if (res.is_connected) {
-        if (pollTimerRef.current) {
-          window.clearInterval(pollTimerRef.current);
-          pollTimerRef.current = null;
-        }
-      }
     } catch {
       // Ignore polling errors
     }
   }, [authFetch, keyData]);
 
   useEffect(() => {
-    if (step === 3 && keyData && !statusData?.is_connected) {
+    if (step === 3 && keyData) {
       pollStatus();
       pollTimerRef.current = window.setInterval(pollStatus, 2000);
     }
@@ -88,7 +82,7 @@ export default function ConnectSourceWizard({ isOpen, onClose, onSuccess }: Conn
         pollTimerRef.current = null;
       }
     };
-  }, [step, keyData, statusData?.is_connected, pollStatus]);
+  }, [step, keyData, pollStatus]);
 
   if (!isOpen) return null;
 
@@ -333,11 +327,13 @@ $sentry->log('user_login_success', [
               />
             </div>
 
-            <div className="rounded-lg border border-border-default bg-bg-base/50 p-3 text-xs text-text-secondary">
-              <p className="flex items-center gap-1.5 font-medium text-text-primary mb-0.5">
-                <span className="text-accent-primary">🔒</span> Scoped Multi-Tenant Isolation
+            <div className="rounded-lg border border-border-default bg-bg-base/50 p-3 text-xs text-text-secondary space-y-1">
+              <p className="flex items-center gap-1.5 font-medium text-text-primary">
+                <span className="text-accent-primary">🔒</span> Private Database & Scoped Isolation
               </p>
-              An API key will be automatically created and restricted to this project and your organization. One project's credentials can never access or modify another project's telemetry.
+              <p>
+                An API key will be automatically created and restricted to this project. Raw telemetry event logs flow directly into your private MongoDB (BYODB) when configured, while Grid Sentry only retains connection credentials and event counters.
+              </p>
             </div>
 
             {error && (
@@ -517,28 +513,47 @@ $sentry->log('user_login_success', [
 
         {/* ── STEP 3: Live Real-Time Verification ─────────────────────────── */}
         {step === 3 && (
-          <div className="space-y-6 text-center py-4">
+          <div className="space-y-6 text-center py-2">
             {statusData?.is_connected ? (
-              /* Success State */
+              /* Success / Live Streaming State */
               <div className="space-y-4 animate-scale-in">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-severity-resolved/20 border-2 border-severity-resolved text-severity-resolved text-3xl">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-severity-resolved/20 border-2 border-severity-resolved text-severity-resolved text-2xl">
                   ✓
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-text-primary">Connected Successfully!</h3>
-                  <p className="text-xs text-severity-resolved font-medium mt-1">
-                    First log event received from <strong>{app}</strong>. Telemetry is streaming live.
+                  <h3 className="text-lg font-bold text-text-primary">Source Verified & Connected!</h3>
+                  <p className="text-xs text-severity-resolved font-medium mt-0.5">
+                    {testSent
+                      ? `Handshake probe received. Telemetry pipeline is active for ${app}.`
+                      : `Live telemetry received from ${app}.`}
                   </p>
                 </div>
 
-                <div className="mx-auto max-w-sm rounded-lg border border-border-default bg-bg-base p-3 font-mono text-xs text-text-secondary space-y-1">
-                  <div className="flex justify-between">
+                <div className="mx-auto max-w-md rounded-lg border border-border-default bg-bg-base p-3.5 font-mono text-xs text-text-secondary space-y-1.5 text-left">
+                  <div className="flex justify-between border-b border-border-default/50 pb-1">
                     <span>Project:</span>
                     <span className="text-text-primary font-bold">{app}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between border-b border-border-default/50 pb-1">
+                    <span>Storage Target:</span>
+                    <span className="text-text-primary font-semibold">
+                      {statusData.has_tenant_db || statusData.storage_destination === 'tenant_db'
+                        ? '🔒 Private MongoDB (BYODB)'
+                        : '☁ Cloud SIEM'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-border-default/50 pb-1">
+                    <span>Telemetry Ingestion:</span>
+                    <span className="text-severity-resolved font-semibold flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-severity-resolved animate-pulse" />
+                      Listening (Real-Time)
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-border-default/50 pb-1">
                     <span>Events Received:</span>
-                    <span className="text-accent-primary font-bold">{statusData.event_count || 1}</span>
+                    <span className="text-accent-primary font-bold text-sm">
+                      {statusData.event_count || 1}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>First Seen:</span>
@@ -550,13 +565,40 @@ $sentry->log('user_login_success', [
                   </div>
                 </div>
 
+                {/* Quick terminal test to verify from user's machine */}
+                <div className="mx-auto max-w-md rounded-lg border border-border-default bg-bg-surface-raised/60 p-3 text-left space-y-2">
+                  <p className="text-[11px] font-semibold text-text-primary flex items-center justify-between">
+                    <span>⚡ Test sending live event from your Terminal:</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopy(
+                          `curl -X POST ${SERVER_URL}/api/logs/ingest -H "Content-Type: application/json" -H "X-API-Key: ${activeKey}" -d '[{"event_type":"cli_test_ping","source_ip":"127.0.0.1","raw_message":"Live test from terminal for ${app}"}]'`
+                        )
+                      }
+                      className="text-[10px] text-accent-primary hover:underline"
+                    >
+                      {copiedSnippet ? '✓ Copied!' : 'Copy cURL'}
+                    </button>
+                  </p>
+                  <pre className="text-[10px] font-mono bg-bg-base p-2 rounded border border-border-default overflow-x-auto text-text-secondary">
+                    {`curl -X POST ${SERVER_URL}/api/logs/ingest \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: ${activeKey}" \\
+  -d '[{"event_type":"cli_test_ping","raw_message":"Live test for ${app}"}]'`}
+                  </pre>
+                  <p className="text-[10px] text-text-disabled">
+                    Paste this into your terminal to see the <strong>Events Received</strong> counter increase immediately!
+                  </p>
+                </div>
+
                 <div className="flex items-center justify-center gap-3 pt-2">
                   <button
                     onClick={() => {
                       onSuccess();
                       onClose();
                     }}
-                    className="rounded-lg bg-accent-primary px-6 py-2.5 text-xs font-semibold text-bg-base hover:opacity-90 shadow"
+                    className="rounded-lg bg-accent-primary px-6 py-2.5 text-xs font-semibold text-bg-base hover:opacity-90 shadow transition-opacity"
                   >
                     Done & View Connected Sources
                   </button>

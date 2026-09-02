@@ -26,11 +26,18 @@ export interface MitreMatrixResponse {
   tactics: MitreTacticMatrixItem[];
 }
 
-export async function getMitreMatrix(lookbackHours = 24): Promise<MitreMatrixResponse> {
+export async function getMitreMatrix(lookbackHours = 24, orgId?: string): Promise<MitreMatrixResponse> {
   const sinceDate = new Date(Date.now() - lookbackHours * 3600 * 1000);
+  const filter: Record<string, any> = {
+    created_at: { $gte: sinceDate },
+    ...(orgId ? { orgId } : {}),
+  };
 
-  const alerts = await AlertModel.find({ created_at: { $gte: sinceDate } });
-  const rules = await RuleModel.find();
+  const [alerts, rules] = await Promise.all([
+    AlertModel.find(filter).lean(),
+    RuleModel.find(orgId ? { orgId } : {}).lean(),
+  ]);
+
   const ruleMap = new Map(rules.map((r) => [r.id, r]));
 
   const hitMap = new Map<string, { count: number; maxSeverity: string }>();

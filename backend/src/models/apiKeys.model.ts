@@ -119,14 +119,19 @@ export async function getApiKeyStatus(id: number, orgId: string): Promise<ApiKey
 
 export async function recordApiKeyIngestEvent(id: number, count: number = 1): Promise<void> {
   const now = new Date();
-  await ApiKeyModel.updateOne(
-    { id },
-    {
-      $set: { last_used_at: now },
-      $inc: { event_count: count },
-      $min: { first_event_at: now },
-    },
-  );
+  const existing = await ApiKeyModel.findOne({ id });
+  if (!existing) return;
+
+  const update: Record<string, any> = {
+    $set: { last_used_at: now },
+    $inc: { event_count: count },
+  };
+
+  if (!existing.first_event_at) {
+    update.$set.first_event_at = now;
+  }
+
+  await ApiKeyModel.updateOne({ id }, update);
 }
 
 export async function revokeApiKey(id: number, orgId: string): Promise<ApiKeyRow | null> {

@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:admin": "tsx src/scripts/seedAdmin.ts"
+    "seed:admin": "tsx src/scripts/seedAdmin.ts",
+    "seed:rules": "tsx src/scripts/seedDefaultRules.ts",
+    "clean:test-data": "tsx src/scripts/cleanupTestData.ts"
   },
   "dependencies": {
     "@opensearch-project/opensearch": "^2.11.0",

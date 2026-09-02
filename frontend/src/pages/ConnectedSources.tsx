@@ -142,6 +142,23 @@ export default function ConnectedSources() {
         )}
       </div>
 
+      {/* ── BYODB Architecture & Telemetry Separation Notice ────────────────── */}
+      <div className="rounded-xl border border-border-default bg-bg-surface-raised/40 p-4 text-xs text-text-secondary flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-severity-low/10 text-severity-low border border-severity-low/30 font-bold shrink-0">
+            🔒
+          </div>
+          <div>
+            <p className="font-semibold text-text-primary">
+              Telemetry Privacy & BYODB Storage Architecture
+            </p>
+            <p className="text-[11px] text-text-secondary mt-0.5">
+              Raw telemetry event data from your connected projects is stored directly in your private MongoDB database (BYODB). Grid Sentry only keeps connection credentials, status, and telemetry event counters in its central database.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* ── Connected Sources Table ────────────────────────────────────────── */}
       <div className="rounded-xl border border-border-default bg-bg-surface overflow-hidden shadow-sm">
         <div className="px-5 py-4 border-b border-border-default bg-bg-surface-raised/40 flex items-center justify-between">
@@ -175,8 +192,10 @@ export default function ConnectedSources() {
               <thead className="border-b border-border-default bg-bg-surface-raised font-mono text-text-secondary uppercase tracking-wider text-[11px]">
                 <tr>
                   <th className="px-5 py-3">Project / App</th>
+                  <th className="px-5 py-3">Storage Destination</th>
                   <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Method</th>
+                  <th className="px-5 py-3">Events Ingested</th>
                   <th className="px-5 py-3">First Seen</th>
                   <th className="px-5 py-3">Last Telemetry</th>
                   {isAdmin && <th className="px-5 py-3 text-right">Actions</th>}
@@ -185,6 +204,7 @@ export default function ConnectedSources() {
               <tbody className="divide-y divide-border-default">
                 {keys.map((k) => {
                   const status = getSourceStatus(k);
+                  const isPrivateDb = k.has_tenant_db || k.storage_destination === 'tenant_db';
                   return (
                     <tr key={k.id} className="hover:bg-bg-surface-raised/50 transition-colors">
                       {/* Project Name */}
@@ -198,6 +218,25 @@ export default function ConnectedSources() {
                             </span>
                           </div>
                         </div>
+                      </td>
+
+                      {/* Storage Destination */}
+                      <td className="px-5 py-3.5">
+                        {isPrivateDb ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded-full border border-severity-low/40 bg-severity-low/10 px-2.5 py-0.5 text-[11px] font-mono font-medium text-severity-low"
+                            title="Raw logs are stored in your private BYODB MongoDB instance. Grid Sentry only keeps connection metadata & event counts."
+                          >
+                            <span>🔒</span> Private MongoDB
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border-default bg-bg-surface-raised px-2.5 py-0.5 text-[11px] font-mono font-medium text-text-secondary"
+                            title="Using Cloud SIEM OpenSearch engine. Connect your own MongoDB in Database Settings to store logs in your private database."
+                          >
+                            <span>☁</span> Cloud SIEM
+                          </span>
+                        )}
                       </td>
 
                       {/* Status */}
@@ -221,6 +260,11 @@ export default function ConnectedSources() {
                             <span>💻</span> Code SDK
                           </span>
                         )}
+                      </td>
+
+                      {/* Events Ingested */}
+                      <td className="px-5 py-3.5 font-mono text-[11px] font-bold text-accent-primary">
+                        {k.event_count ? k.event_count.toLocaleString() : '0'}
                       </td>
 
                       {/* First Seen */}

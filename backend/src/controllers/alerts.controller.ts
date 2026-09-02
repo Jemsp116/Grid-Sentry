@@ -31,7 +31,6 @@ export async function listAlerts(req: Request, res: Response): Promise<void> {
 
   if (!req.user) throw ApiError.unauthorized();
   const orgId = req.user.orgId;
-  await AlertsModel.seedDemoAlertsIfEmpty(req.user.id, orgId);
 
   const result = await AlertsModel.getAlerts({ ...parsed.data, orgId });
   res.status(200).json({ status: 'ok', data: result });
@@ -213,8 +212,6 @@ export async function exportAlerts(req: Request, res: Response): Promise<void> {
     page: 1,
     pageSize: 10000,
   };
-
-  await AlertsModel.seedDemoAlertsIfEmpty(req.user.id, orgId);
 
   const result = await AlertsModel.getAlerts(filter);
 

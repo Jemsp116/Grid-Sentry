@@ -13,7 +13,6 @@ import { SOC_LOGS_PATTERN } from '../utils/opensearch.queries.js';
 export async function listRules(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
   const orgId = req.user.orgId;
-  await RulesModel.seedDefaultRulesIfEmpty(req.user.id, orgId);
   const rules = await RulesModel.getRules(orgId);
   res.status(200).json({ status: 'ok', data: rules });
 }

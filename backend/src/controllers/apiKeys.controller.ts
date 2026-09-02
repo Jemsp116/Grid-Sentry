@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ApiError } from '../utils/ApiError.js';
 import * as ApiKeysModel from '../models/apiKeys.model.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
+import { hasVerifiedTenantDb } from '../services/tenantData.service.js';
 
 const CreateApiKeySchema = z.object({
   app_name: z.string().min(1, 'App name is required').max(100, 'App name is too long'),
@@ -40,8 +41,18 @@ export async function createApiKey(req: Request, res: Response): Promise<void> {
 
 export async function listApiKeys(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
-  const keys = await ApiKeysModel.listApiKeys(req.user.orgId);
-  res.status(200).json({ status: 'ok', data: keys });
+  const [keys, hasTenantDb] = await Promise.all([
+    ApiKeysModel.listApiKeys(req.user.orgId),
+    hasVerifiedTenantDb(req.user.id),
+  ]);
+
+  const enhancedKeys = keys.map((k) => ({
+    ...k,
+    has_tenant_db: hasTenantDb,
+    storage_destination: hasTenantDb ? 'tenant_db' : 'central_siem',
+  }));
+
+  res.status(200).json({ status: 'ok', data: enhancedKeys });
 }
 
 export async function getApiKeyStatus(req: Request, res: Response): Promise<void> {
@@ -51,12 +62,23 @@ export async function getApiKeyStatus(req: Request, res: Response): Promise<void
     throw ApiError.badRequest('Invalid API key ID');
   }
 
-  const status = await ApiKeysModel.getApiKeyStatus(id, req.user.orgId);
+  const [status, hasTenantDb] = await Promise.all([
+    ApiKeysModel.getApiKeyStatus(id, req.user.orgId),
+    hasVerifiedTenantDb(req.user.id),
+  ]);
+
   if (!status) {
     throw ApiError.notFound('API key not found');
   }
 
-  res.status(200).json({ status: 'ok', data: status });
+  res.status(200).json({
+    status: 'ok',
+    data: {
+      ...status,
+      has_tenant_db: hasTenantDb,
+      storage_destination: hasTenantDb ? 'tenant_db' : 'central_siem',
+    },
+  });
 }
 
 export async function revokeApiKey(req: Request, res: Response): Promise<void> {

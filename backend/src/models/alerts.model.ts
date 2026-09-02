@@ -1,5 +1,4 @@
 import type { SeverityLevel } from './rules.model.js';
-import { seedDefaultRulesIfEmpty, getRules } from './rules.model.js';
 import {
   AlertModel,
   AlertNoteModel,
@@ -200,47 +199,4 @@ export async function addAlertNote(
     note: doc.note,
     created_at: doc.created_at,
   };
-}
-
-export async function seedDemoAlertsIfEmpty(userId: number | null, orgId: string): Promise<void> {
-  const count = await AlertModel.countDocuments({ orgId });
-  if (count > 0) return;
-
-  await seedDefaultRulesIfEmpty(userId, orgId);
-  const rules = await getRules(orgId);
-  if (rules.length === 0) return;
-
-  const bruteForceRule = rules.find((r) => r.mitre_technique_id === 'T1110') ?? rules[0]!;
-  const invalidUserRule = rules.find((r) => r.mitre_technique_id === 'T1078') ?? rules[0]!;
-
-  const demoAlerts = [
-    {
-      orgId,
-      rule_id: bruteForceRule.id,
-      source_ip: '192.168.1.105',
-      target_host: 'soc_ssh_target',
-      severity: bruteForceRule.severity,
-      status: 'new' as AlertStatus,
-      opensearch_log_ids: ['demo-log-1', 'demo-log-2'],
-      assigned_to: userId,
-    },
-    {
-      orgId,
-      rule_id: invalidUserRule.id,
-      source_ip: '10.0.0.42',
-      target_host: 'soc_ssh_target',
-      severity: invalidUserRule.severity,
-      status: 'investigating' as AlertStatus,
-      opensearch_log_ids: ['demo-log-3'],
-      assigned_to: userId,
-    },
-  ];
-
-  for (const alert of demoAlerts) {
-    const nextId = await getNextSequence('alerts');
-    await AlertModel.create({
-      id: nextId,
-      ...alert,
-    });
-  }
 }

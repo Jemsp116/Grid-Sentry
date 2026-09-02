@@ -192,13 +192,13 @@ export default function DatabaseSettings() {
       {/* Architecture Info Card */}
       <div className="rounded-lg border border-border-default bg-bg-surface-raised p-5 text-xs space-y-2 text-text-secondary">
         <h3 className="font-semibold text-text-primary flex items-center gap-2">
-          <span>⚙</span> Data Separation Notice
+          <span>⚙</span> Telemetry & Data Separation Architecture
         </h3>
         <p>
-          Grid Sentry separates telemetry into high-volume SIEM log events (indexed in OpenSearch for sub-second full-text queries) and application metadata (alerts, detection rules, and audit logs).
+          Connecting your private MongoDB directs all <strong>connected source telemetry logs</strong> (under <code className="font-mono text-accent-primary">source_logs</code>), <strong>alert feeds</strong>, <strong>detection rules</strong>, and <strong>audit trails</strong> directly into your own database cluster.
         </p>
         <p>
-          Connecting your own MongoDB directs all alert, rule, and audit log writes to your database cluster while raw SIEM log search remains powered by OpenSearch.
+          Grid Sentry's central database strictly maintains only project connection credentials, active status, and aggregate event counters.
         </p>
       </div>
 
