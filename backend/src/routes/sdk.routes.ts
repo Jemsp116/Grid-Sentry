@@ -179,14 +179,35 @@ router.get('/gridsentry.js', (_req, res) => {
 });
 
 /**
- * GET /api/sdk/download
- * Triggers direct browser attachment download for gridsentry.js
+ * GET /api/sdk/agent-config
+ * Generates a pre-filled log-shipping agent configuration file for download.
  */
-router.get('/download', (_req, res) => {
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="gridsentry.js"');
+router.get('/agent-config', (req, res) => {
+  const apiKey = (req.query.key as string) || 'gs_live_YOUR_API_KEY';
+  const appName = (req.query.app as string) || 'my-project';
+  const baseUrl = (req.query.url as string) || 'http://localhost:4000';
+
+  const config = {
+    gridsentry: {
+      version: '1.0',
+      api_key: apiKey,
+      endpoint: `${baseUrl.replace(/\/+$/, '')}/api/logs/ingest`,
+      project_name: appName,
+      batch_size: 50,
+      flush_interval_seconds: 5,
+      watch_paths: [
+        '/var/log/nginx/access.log',
+        '/var/log/apache2/access.log',
+        '/var/log/auth.log',
+        'C:\\inetpub\\logs\\LogFiles\\*.log',
+      ],
+    },
+  };
+
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="gridsentry-agent-${appName}.json"`);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.send(GRIDSENTRY_JS_BUNDLE);
+  res.send(JSON.stringify(config, null, 2));
 });
 
 export default router;

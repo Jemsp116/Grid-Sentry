@@ -92,18 +92,30 @@ export function extractHostsFromConnectionString(connectionString: string): stri
 
 /**
  * Performs SSRF validation on a submitted MongoDB connection string.
- * Resolves hostnames via DNS lookup and throws if any IP is private/internal.
+ * Resolves hostnames via DNS (supporting standard A/AAAA and Atlas SRV records)
+ * and throws if any IP is private/internal.
  */
 export async function validateConnectionStringSSRF(connectionString: string): Promise<void> {
-  const hosts = extractHostsFromConnectionString(connectionString);
+  const trimmed = connectionString.trim();
+  const isSrv = trimmed.startsWith('mongodb+srv://');
+  const hosts = extractHostsFromConnectionString(trimmed);
+
   if (hosts.length === 0) {
     throw new Error('No valid hostnames found in submitted MongoDB connection string');
   }
 
+  const srvResolver = new dns.promises.Resolver();
+  srvResolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+
   for (const host of hosts) {
     const cleanHost = host.toLowerCase().trim();
 
-    if (cleanHost === 'localhost' || cleanHost === 'host.docker.internal' || cleanHost === '127.0.0.1' || cleanHost === '::1') {
+    if (
+      cleanHost === 'localhost' ||
+      cleanHost === 'host.docker.internal' ||
+      cleanHost === '127.0.0.1' ||
+      cleanHost === '::1'
+    ) {
       throw new Error(`SSRF Blocked: Destination host "${host}" targets a local/internal address.`);
     }
 
@@ -111,20 +123,49 @@ export async function validateConnectionStringSSRF(connectionString: string): Pr
       if (isPrivateIP(cleanHost)) {
         throw new Error(`SSRF Blocked: IP address "${cleanHost}" belongs to a private/internal network.`);
       }
-    } else {
-      // Resolve hostname via DNS
+      continue;
+    }
+
+    const ipsToCheck: string[] = [];
+
+    // 1. Try standard DNS A/AAAA lookup
+    try {
+      const addresses = await dns.promises.lookup(cleanHost, { all: true });
+      for (const addr of addresses) {
+        ipsToCheck.push(addr.address);
+      }
+    } catch {
+      // Standard lookup may fail for mongodb+srv:// domain roots which only have SRV records
+    }
+
+    // 2. If no A records found and it's an SRV connection string, resolve SRV records
+    if (ipsToCheck.length === 0 && isSrv) {
       try {
-        const addresses = await dns.promises.lookup(cleanHost, { all: true });
-        for (const addr of addresses) {
-          if (isPrivateIP(addr.address)) {
-            throw new Error(`SSRF Blocked: Host "${cleanHost}" resolves to private IP "${addr.address}".`);
+        const srvRecords = await srvResolver.resolveSrv(`_mongodb._tcp.${cleanHost}`);
+        for (const srv of srvRecords) {
+          try {
+            const shardAddrs = await dns.promises.lookup(srv.name, { all: true });
+            for (const addr of shardAddrs) {
+              ipsToCheck.push(addr.address);
+            }
+          } catch {
+            // Ignore individual shard resolution error if others succeed
           }
         }
-      } catch (err) {
-        if (err instanceof Error && err.message.includes('SSRF Blocked')) {
-          throw err;
-        }
-        throw new Error(`Unable to resolve host "${cleanHost}" for security validation.`);
+      } catch {
+        // SRV resolution failed
+      }
+    }
+
+    // 3. If still no IPs could be resolved, the host does not exist or cannot be reached
+    if (ipsToCheck.length === 0) {
+      throw new Error(`Unable to resolve host "${cleanHost}". Please verify that your MongoDB cluster URL is correct and active.`);
+    }
+
+    // 4. Verify all resolved IPs are public
+    for (const ip of ipsToCheck) {
+      if (isPrivateIP(ip)) {
+        throw new Error(`SSRF Blocked: Host "${cleanHost}" resolves to private IP "${ip}".`);
       }
     }
   }

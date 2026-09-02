@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import {
   fetchApiKeys,
-  createApiKey,
   revokeApiKey,
   type ApiKeyItem,
-  type CreatedApiKeyResponse,
 } from '../api/apiKeys.js';
+import ConnectSourceWizard from '../components/ConnectSourceWizard.js';
 
 export default function ConnectedSources() {
   const { authFetch, user } = useAuth();
@@ -14,28 +13,14 @@ export default function ConnectedSources() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Integration guide tab state
-  const [activeGuideTab, setActiveGuideTab] = useState<'script' | 'nextjs' | 'express' | 'file'>('script');
-  const [copiedSnippet, setCopiedSnippet] = useState(false);
-
-  // Generate modal state
-  const [isGenerateOpen, setIsGenerateOpen] = useState(false);
-  const [appNameInput, setAppNameInput] = useState('');
-  const [generateError, setGenerateError] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
-
-  // New key display modal state
-  const [createdKeyData, setCreatedKeyData] = useState<CreatedApiKeyResponse | null>(null);
-  const [copied, setCopied] = useState(false);
+  // Wizard modal state
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   // Revoke modal state
   const [keyToRevoke, setKeyToRevoke] = useState<ApiKeyItem | null>(null);
   const [revoking, setRevoking] = useState(false);
 
   const isAdmin = user?.role === 'admin';
-
-  // Selected key for code snippets
-  const activeApiKey = createdKeyData?.raw_key || 'gs_live_YOUR_API_KEY';
 
   const loadKeys = async () => {
     try {
@@ -54,32 +39,6 @@ export default function ConnectedSources() {
     loadKeys();
   }, []);
 
-  const handleGenerateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!appNameInput.trim()) return;
-
-    try {
-      setGenerating(true);
-      setGenerateError(null);
-      const newKey = await createApiKey(authFetch, appNameInput.trim());
-      setCreatedKeyData(newKey);
-      setIsGenerateOpen(false);
-      setAppNameInput('');
-      loadKeys();
-    } catch (err) {
-      setGenerateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleCopyKey = () => {
-    if (!createdKeyData) return;
-    navigator.clipboard.writeText(createdKeyData.raw_key);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const handleConfirmRevoke = async () => {
     if (!keyToRevoke) return;
     try {
@@ -94,259 +53,64 @@ export default function ConnectedSources() {
     }
   };
 
-  const handleCopySnippet = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedSnippet(true);
-    setTimeout(() => setCopiedSnippet(false), 2000);
-  };
-
-  const scriptTagSnippet = `<!-- 1. Paste this single script tag into your website <head> -->
-<script 
-  src="http://localhost:4000/api/sdk/gridsentry.js" 
-  data-api-key="${activeApiKey}" 
-  data-app="my-website">
-</script>
-
-<!-- 2. That's it! All website errors are captured automatically. -->
-<!-- Optional: Call helper methods anywhere in your JavaScript: -->
-<script>
-  // When user logs in successfully:
-  GridSentry.loginSuccess('user@example.com');
-
-  // When login fails:
-  GridSentry.loginFailure('user@example.com', 'Incorrect password');
-
-  // Log custom security event:
-  GridSentry.log('password_reset_requested', { user_identifier: 'user@example.com' });
-</script>`;
-
-  const nextjsSnippet = `// 1. Download gridsentry.js and place it in your project (e.g. src/utils/gridsentry.js)
-// 2. Import and use anywhere in Next.js / React / Vercel API routes:
-
-import GridSentry from '@/utils/gridsentry.js';
-
-// Initialize with your API key (or set process.env.GRID_SENTRY_API_KEY)
-GridSentry.init({
-  apiKey: process.env.GRID_SENTRY_API_KEY || '${activeApiKey}',
-  baseUrl: process.env.GRID_SENTRY_URL || 'http://localhost:4000',
-  appName: 'my-nextjs-app'
-});
-
-export async function POST(request: Request) {
-  const { email, password } = await request.json();
-
-  if (password !== 'secret123') {
-    // Automatically logs to Grid Sentry SOC Dashboard
-    GridSentry.loginFailure(email, 'Invalid password');
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  GridSentry.loginSuccess(email);
-  return Response.json({ success: true });
-}`;
-
-  const expressSnippet = `// 1. Download gridsentry.js into your project directory
-// 2. Import into your Express / Node.js backend:
-
-const express = require('express');
-const GridSentry = require('./gridsentry.js');
-
-GridSentry.init({
-  apiKey: process.env.GRID_SENTRY_API_KEY || '${activeApiKey}',
-  baseUrl: process.env.GRID_SENTRY_URL || 'http://localhost:4000',
-  appName: 'my-express-api'
-});
-
-const app = express();
-app.use(express.json());
-
-app.post('/login', (req, res) => {
-  const { email, password } = req.body;
-  
-  if (!email || !password) {
-    GridSentry.loginFailure(email || 'anonymous', 'Missing credentials');
-    return res.status(400).json({ error: 'Missing fields' });
-  }
-  
-  GridSentry.loginSuccess(email);
-  res.json({ token: 'jwt_token_here' });
-});`;
-
-  const standaloneFileCode = `/**
- * Grid Sentry Universal Client (Single Drop-in File)
- * Zero external dependencies. Works in Browsers, Node.js, Next.js, Express, and Vercel.
- */
-(function (global) {
-  'use strict';
-
-  var GridSentry = {
-    _apiKey: '${activeApiKey}',
-    _baseUrl: 'http://localhost:4000',
-    _appName: 'external-website',
-    _buffer: [],
-    _flushTimer: null,
-
-    init: function (config) {
-      if (!config) config = {};
-      if (typeof config === 'string') config = { apiKey: config };
-      this._apiKey = config.apiKey || this._apiKey || '';
-      this._baseUrl = (config.baseUrl || this._baseUrl || '').replace(/\\/+$/, '');
-      this._appName = config.appName || this._appName || 'external-website';
-
-      if (typeof window !== 'undefined' && config.autoCaptureErrors !== false) {
-        this._setupAutoCapture();
-      }
-      return this;
-    },
-
-    log: function (eventType, payload) {
-      if (!payload) payload = {};
-      if (typeof payload === 'string') payload = { raw_message: payload };
-
-      var event = {
-        timestamp: payload.timestamp || new Date().toISOString(),
-        event_type: eventType || 'custom_event',
-        source_ip: payload.source_ip || payload.ip || '127.0.0.1',
-        user_identifier: payload.user_identifier || payload.user || payload.email || undefined,
-        raw_message: payload.raw_message || payload.message || ('Event: ' + eventType),
-        details: payload.details || payload.data || {}
+  function getSourceStatus(k: ApiKeyItem): { label: string; style: string; dot: string } {
+    if (!k.is_active) {
+      return {
+        label: 'Revoked',
+        style: 'border-border-default text-text-disabled bg-bg-base',
+        dot: 'bg-text-disabled',
       };
+    }
 
-      this._buffer.push(event);
-      this._scheduleFlush();
-    },
-
-    loginSuccess: function (userEmail, details) {
-      this.log('user_login_success', {
-        user_identifier: userEmail,
-        raw_message: 'User ' + userEmail + ' logged in successfully',
-        details: details || {}
-      });
-    },
-
-    loginFailure: function (userEmail, reason, details) {
-      var d = details || {};
-      if (reason) d.reason = reason;
-      this.log('user_login_failed', {
-        user_identifier: userEmail,
-        raw_message: 'Failed login attempt for ' + userEmail + (reason ? ': ' + reason : ''),
-        details: d
-      });
-    },
-
-    error: function (err, details) {
-      var msg = (err && err.message) ? err.message : String(err);
-      var stack = (err && err.stack) ? err.stack : undefined;
-      var d = details || {};
-      if (stack) d.stack = stack;
-      this.log('client_error', {
-        raw_message: 'Error: ' + msg,
-        details: d
-      });
-    },
-
-    _scheduleFlush: function () {
-      var self = this;
-      if (this._flushTimer) return;
-      this._flushTimer = setTimeout(function () {
-        self._flushTimer = null;
-        self.flush();
-      }, 300);
-    },
-
-    flush: function () {
-      if (this._buffer.length === 0) return;
-      var items = this._buffer.slice();
-      this._buffer = [];
-
-      var url = this._baseUrl + '/api/logs/ingest';
-      var headers = {
-        'Content-Type': 'application/json',
-        'X-API-Key': this._apiKey
+    if (!k.last_used_at && !k.first_event_at) {
+      return {
+        label: 'Waiting for Data',
+        style: 'border-accent-primary/40 text-accent-primary bg-accent-primary/10',
+        dot: 'bg-accent-primary animate-pulse',
       };
-
-      try {
-        if (typeof fetch === 'function') {
-          fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(items),
-            mode: 'cors',
-            credentials: 'omit',
-            keepalive: true
-          }).catch(function () {});
-        }
-      } catch (e) {}
-    },
-
-    _setupAutoCapture: function () {
-      var self = this;
-      if (typeof window !== 'undefined') {
-        window.addEventListener('error', function (e) {
-          self.error(e.error || e.message, { filename: e.filename, lineno: e.lineno, colno: e.colno });
-        });
-        window.addEventListener('unhandledrejection', function (e) {
-          self.error(e.reason || 'Unhandled Promise Rejection');
-        });
-      }
     }
-  };
 
-  if (typeof document !== 'undefined') {
-    var script = document.currentScript || document.querySelector('script[data-api-key]');
-    if (script) {
-      var key = script.getAttribute('data-api-key');
-      var base = script.getAttribute('data-base-url') || script.src.split('/api/sdk')[0] || window.location.origin;
-      var app = script.getAttribute('data-app') || 'web-app';
-      if (key) {
-        GridSentry.init({ apiKey: key, baseUrl: base, appName: app });
-      }
+    const lastUsedMs = k.last_used_at ? new Date(k.last_used_at).getTime() : 0;
+    const hoursSince = (Date.now() - lastUsedMs) / (1000 * 60 * 60);
+
+    if (hoursSince <= 24) {
+      return {
+        label: 'Active',
+        style: 'border-severity-resolved text-severity-resolved bg-severity-resolved/10',
+        dot: 'bg-severity-resolved',
+      };
     }
-  }
 
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = GridSentry;
-    module.exports.GridSentry = GridSentry;
-    module.exports.gridSentry = GridSentry;
+    return {
+      label: 'No Recent Data',
+      style: 'border-severity-medium text-severity-medium bg-severity-medium/10',
+      dot: 'bg-severity-medium',
+    };
   }
-  if (typeof global !== 'undefined') {
-    global.GridSentry = GridSentry;
-    global.gridSentry = GridSentry;
-  }
-})(typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : this);`;
-
-  const handleDownloadFile = () => {
-    const blob = new Blob([standaloneFileCode], { type: 'application/javascript' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'gridsentry.js';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Connected Sources & API Keys</h1>
-          <p className="mt-1 text-xs text-text-secondary">
-            Connect any website or backend to Grid Sentry using a single file or script tag.
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-text-primary">Connected Sources</h1>
+            <span className="rounded bg-accent-primary/10 px-2.5 py-0.5 font-mono text-xs font-semibold text-accent-primary border border-accent-primary/30">
+              LOG INGESTION
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-text-secondary">
+            Manage projects, applications, and log-shipping agents streaming telemetry into Grid Sentry.
           </p>
         </div>
 
         {isAdmin && (
           <button
-            onClick={() => {
-              setGenerateError(null);
-              setIsGenerateOpen(true);
-            }}
-            className="flex items-center justify-center gap-2 rounded bg-accent-primary px-4 py-2 text-xs font-medium text-text-inverse hover:bg-accent-primary/90 transition-colors shadow-sm"
+            onClick={() => setIsWizardOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-lg bg-accent-primary px-4 py-2.5 text-xs font-semibold text-bg-base hover:opacity-90 transition-opacity shadow-sm"
           >
-            <span>+</span> Generate New API Key
+            <span>+</span>
+            <span>Connect a Project</span>
           </button>
         )}
       </div>
@@ -357,323 +121,180 @@ app.post('/login', (req, res) => {
         </div>
       )}
 
-      {/* ── Ultra-Simple 1-Step Integration Card ───────────────────────────── */}
-      <div className="rounded-lg border border-accent-primary/30 bg-bg-surface p-6 shadow-md space-y-6 relative overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-default pb-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-accent-primary/10 text-accent-primary text-[11px] font-mono font-semibold mb-2">
-              <span>⚡</span> 1-Step Integration
-            </div>
-            <h2 className="text-lg font-bold text-text-primary">
-              Connect Your Website in 10 Seconds
-            </h2>
-            <p className="mt-1 text-xs text-text-secondary">
-              Zero complicated setup. Add one file or one script tag to your website to stream live security logs into this dashboard.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleDownloadFile}
-              className="flex items-center gap-2 rounded-md bg-accent-primary px-4 py-2 text-xs font-semibold text-text-inverse hover:bg-accent-primary/90 transition-all shadow"
-            >
-              <span>📥</span> Download gridsentry.js
-            </button>
-          </div>
+      {/* ── Quick Integration Banner ────────────────────────────────────────── */}
+      <div className="rounded-xl border border-accent-primary/30 bg-bg-surface p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-1">
+          <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
+            <span>⚡</span> Connect Any Project in Under 1 Minute
+          </h2>
+          <p className="text-xs text-text-secondary max-w-2xl">
+            Whether you have developers who can add 3 lines of code (Node.js, Python, Go, PHP) or non-technical teams who want to point our log shipper at existing files — get instant live connection feedback.
+          </p>
         </div>
 
-        {/* 3 Simple Visual Steps */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
-          <div className="rounded-md border border-border-default bg-bg-surface-raised p-4 space-y-2">
-            <div className="flex items-center gap-2 text-accent-primary font-bold text-sm">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-primary text-text-inverse text-xs">1</span>
-              <span>Get the File</span>
-            </div>
-            <p className="text-xs font-sans text-text-secondary leading-relaxed">
-              Click <strong>"Download gridsentry.js"</strong> or copy the 1-line script tag below.
-            </p>
-          </div>
-
-          <div className="rounded-md border border-border-default bg-bg-surface-raised p-4 space-y-2">
-            <div className="flex items-center gap-2 text-accent-primary font-bold text-sm">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-primary text-text-inverse text-xs">2</span>
-              <span>Add to Your Website</span>
-            </div>
-            <p className="text-xs font-sans text-text-secondary leading-relaxed">
-              Drop <code className="text-accent-primary">gridsentry.js</code> into your website (HTML, React, Next.js, Express, or Vercel).
-            </p>
-          </div>
-
-          <div className="rounded-md border border-border-default bg-bg-surface-raised p-4 space-y-2">
-            <div className="flex items-center gap-2 text-severity-low font-bold text-sm">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-severity-low text-white text-xs">3</span>
-              <span>Done!</span>
-            </div>
-            <p className="text-xs font-sans text-text-secondary leading-relaxed">
-              All logins, errors, and security events flow directly into <strong>Log Explorer</strong> and trigger SOC alerts!
-            </p>
-          </div>
-        </div>
-
-        {/* Code Snippets Tabs */}
-        <div className="space-y-3 pt-2">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-default pb-1">
-            <div className="flex items-center gap-2 overflow-x-auto">
-              <button
-                onClick={() => setActiveGuideTab('script')}
-                className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeGuideTab === 'script'
-                    ? 'border-accent-primary text-accent-primary font-bold'
-                    : 'border-transparent text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <span>🌐</span> 1-Line HTML Script Tag
-              </button>
-              <button
-                onClick={() => setActiveGuideTab('nextjs')}
-                className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeGuideTab === 'nextjs'
-                    ? 'border-accent-primary text-accent-primary font-bold'
-                    : 'border-transparent text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <span>⚡</span> React / Next.js / Vercel
-              </button>
-              <button
-                onClick={() => setActiveGuideTab('express')}
-                className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeGuideTab === 'express'
-                    ? 'border-accent-primary text-accent-primary font-bold'
-                    : 'border-transparent text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <span>🚀</span> Node.js / Express Backend
-              </button>
-              <button
-                onClick={() => setActiveGuideTab('file')}
-                className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                  activeGuideTab === 'file'
-                    ? 'border-accent-primary text-accent-primary font-bold'
-                    : 'border-transparent text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <span>📄</span> View gridsentry.js Code
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  const code =
-                    activeGuideTab === 'script'
-                      ? scriptTagSnippet
-                      : activeGuideTab === 'nextjs'
-                      ? nextjsSnippet
-                      : activeGuideTab === 'express'
-                      ? expressSnippet
-                      : standaloneFileCode;
-                  handleCopySnippet(code);
-                }}
-                className="rounded border border-border-default bg-bg-surface px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary transition-colors flex items-center gap-1"
-              >
-                <span>📋</span> {copiedSnippet ? 'Copied!' : 'Copy Snippet'}
-              </button>
-            </div>
-          </div>
-
-          <div className="relative rounded-md border border-border-default bg-bg-surface-raised p-4 font-mono text-xs overflow-x-auto text-text-primary">
-            <pre className="whitespace-pre">
-              {activeGuideTab === 'script' && scriptTagSnippet}
-              {activeGuideTab === 'nextjs' && nextjsSnippet}
-              {activeGuideTab === 'express' && expressSnippet}
-              {activeGuideTab === 'file' && standaloneFileCode}
-            </pre>
-          </div>
-        </div>
+        {isAdmin && (
+          <button
+            onClick={() => setIsWizardOpen(true)}
+            className="shrink-0 rounded-lg border border-accent-primary bg-accent-primary/15 px-4 py-2 text-xs font-semibold text-accent-primary hover:bg-accent-primary/25 transition-colors"
+          >
+            Launch Setup Wizard →
+          </button>
+        )}
       </div>
 
-      {/* Active API Keys Table Card */}
-      <div className="rounded-lg border border-border-default bg-bg-surface overflow-hidden shadow-sm">
+      {/* ── Connected Sources Table ────────────────────────────────────────── */}
+      <div className="rounded-xl border border-border-default bg-bg-surface overflow-hidden shadow-sm">
         <div className="px-5 py-4 border-b border-border-default bg-bg-surface-raised/40 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wider font-mono">
-            Active Connected API Keys ({keys.length})
+            Connected Projects & Sources ({keys.length})
           </h3>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center p-12">
+          <div className="flex items-center justify-center p-16">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-primary border-t-transparent" />
           </div>
         ) : keys.length === 0 ? (
-          <div className="p-12 text-center text-xs text-text-secondary">
-            No API keys generated yet. Click "Generate New API Key" above to create an API key for your website.
+          <div className="p-16 text-center text-xs text-text-secondary space-y-3">
+            <p className="text-sm text-text-primary font-medium">No connected sources yet.</p>
+            <p className="max-w-md mx-auto">
+              Click <strong>"Connect a Project"</strong> to generate your first project-scoped API key and start streaming logs into your SOC dashboard.
+            </p>
+            {isAdmin && (
+              <button
+                onClick={() => setIsWizardOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent-primary px-4 py-2 text-xs font-semibold text-bg-base hover:opacity-90 transition-opacity"
+              >
+                + Connect Your First Project
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border-default bg-bg-surface-raised font-mono text-text-secondary uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="px-5 py-3">App Name</th>
+                  <th className="px-5 py-3">Project / App</th>
                   <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Last Used</th>
-                  <th className="px-5 py-3">Created At</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+                  <th className="px-5 py-3">Method</th>
+                  <th className="px-5 py-3">First Seen</th>
+                  <th className="px-5 py-3">Last Telemetry</th>
+                  {isAdmin && <th className="px-5 py-3 text-right">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border-default font-mono">
-                {keys.map((k) => (
-                  <tr key={k.id} className="hover:bg-bg-surface-raised/50 transition-colors">
-                    <td className="px-5 py-3 font-semibold text-text-primary">{k.app_name}</td>
-                    <td className="px-5 py-3">
-                      {k.is_active ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-severity-low/10 px-2.5 py-0.5 text-[11px] font-medium text-severity-low">
-                          <span className="h-1.5 w-1.5 rounded-full bg-severity-low" />
-                          Active
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-text-secondary/10 px-2.5 py-0.5 text-[11px] font-medium text-text-secondary">
-                          <span className="h-1.5 w-1.5 rounded-full bg-text-secondary" />
-                          Revoked
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-text-secondary">
-                      {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never'}
-                    </td>
-                    <td className="px-5 py-3 text-text-secondary">
-                      {new Date(k.created_at).toLocaleString()}
-                    </td>
-                    <td className="px-5 py-3 text-right font-sans">
-                      {isAdmin && k.is_active && (
-                        <button
-                          onClick={() => setKeyToRevoke(k)}
-                          className="rounded border border-severity-critical/30 bg-severity-critical/10 px-2.5 py-1 text-xs text-severity-critical hover:bg-severity-critical/20 transition-colors"
+              <tbody className="divide-y divide-border-default">
+                {keys.map((k) => {
+                  const status = getSourceStatus(k);
+                  return (
+                    <tr key={k.id} className="hover:bg-bg-surface-raised/50 transition-colors">
+                      {/* Project Name */}
+                      <td className="px-5 py-3.5 font-medium text-text-primary">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">📦</span>
+                          <div>
+                            <span className="font-semibold text-sm">{k.app_name}</span>
+                            <span className="block font-mono text-[10px] text-text-secondary">
+                              ID: #{k.id}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-5 py-3.5">
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-mono font-medium ${status.style}`}
                         >
-                          Revoke
-                        </button>
+                          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+                          {status.label}
+                        </span>
+                      </td>
+
+                      {/* Method */}
+                      <td className="px-5 py-3.5 font-mono text-xs text-text-secondary">
+                        {k.connection_method === 'agent' ? (
+                          <span className="flex items-center gap-1">
+                            <span>📄</span> Log Shipper Agent
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-accent-primary">
+                            <span>💻</span> Code SDK
+                          </span>
+                        )}
+                      </td>
+
+                      {/* First Seen */}
+                      <td className="px-5 py-3.5 font-mono text-text-secondary text-[11px]">
+                        {k.first_event_at
+                          ? new Date(k.first_event_at).toLocaleDateString('en-GB', {
+                              month: 'short',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—'}
+                      </td>
+
+                      {/* Last Telemetry */}
+                      <td className="px-5 py-3.5 font-mono text-text-secondary text-[11px]">
+                        {k.last_used_at
+                          ? new Date(k.last_used_at).toLocaleDateString('en-GB', {
+                              month: 'short',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Never'}
+                      </td>
+
+                      {/* Actions */}
+                      {isAdmin && (
+                        <td className="px-5 py-3.5 text-right font-sans">
+                          {k.is_active ? (
+                            <button
+                              onClick={() => setKeyToRevoke(k)}
+                              className="rounded border border-severity-critical/30 bg-severity-critical/10 px-2.5 py-1 text-xs text-severity-critical hover:bg-severity-critical/20 transition-colors"
+                            >
+                              Revoke
+                            </button>
+                          ) : (
+                            <span className="text-text-disabled text-xs font-mono">Revoked</span>
+                          )}
+                        </td>
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* Modal: Generate Key Form */}
-      {isGenerateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-lg border border-border-default bg-bg-surface p-6 shadow-xl">
-            <h2 className="text-base font-semibold text-text-primary">Generate API Key</h2>
-            <p className="mt-1 text-xs text-text-secondary">
-              Enter the name of your website or service connecting to Grid Sentry.
-            </p>
+      {/* ── Guided Wizard Modal ────────────────────────────────────────────── */}
+      <ConnectSourceWizard
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onSuccess={loadKeys}
+      />
 
-            <form onSubmit={handleGenerateSubmit} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">
-                  Website / App Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. my-vercel-site, auth-portal"
-                  value={appNameInput}
-                  onChange={(e) => setAppNameInput(e.target.value)}
-                  className="w-full rounded border border-border-default bg-bg-surface-raised px-3 py-2 text-xs text-text-primary placeholder:text-text-secondary/50 focus:border-accent-primary focus:outline-none font-mono"
-                />
-              </div>
-
-              {generateError && (
-                <div className="rounded border border-severity-critical/30 bg-severity-critical/10 p-3 text-xs text-severity-critical">
-                  {generateError}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsGenerateOpen(false)}
-                  className="rounded border border-border-default px-3.5 py-1.5 text-xs text-text-secondary hover:bg-bg-surface-raised transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={generating || !appNameInput.trim()}
-                  className="rounded bg-accent-primary px-3.5 py-1.5 text-xs font-medium text-text-inverse hover:bg-accent-primary/90 disabled:opacity-50 transition-colors"
-                >
-                  {generating ? 'Generating...' : 'Generate Key'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Raw Key Display (Shown ONCE) */}
-      {createdKeyData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-lg border border-accent-primary/40 bg-bg-surface p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-2 text-accent-primary">
-              <span className="text-xl">🔑</span>
-              <h2 className="text-base font-semibold">API Key Generated</h2>
-            </div>
-
-            <div className="rounded border border-severity-high/40 bg-severity-high/10 p-3 text-xs text-severity-high">
-              <strong>IMPORTANT:</strong> Copy your API key now. It is pre-filled in your integration snippets and will not be displayed again.
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">
-                App Name: <span className="text-text-primary font-mono">{createdKeyData.app_name}</span>
-              </label>
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={createdKeyData.raw_key}
-                  className="flex-1 rounded border border-border-default bg-bg-surface-raised px-3 py-2 font-mono text-xs text-accent-primary select-all focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyKey}
-                  className="rounded bg-accent-primary px-3.5 py-2 text-xs font-medium text-text-inverse hover:bg-accent-primary/90 transition-colors"
-                >
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setCreatedKeyData(null)}
-                className="rounded border border-border-default px-4 py-2 text-xs font-medium text-text-primary hover:bg-bg-surface-raised transition-colors"
-              >
-                I have saved this key
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Confirm Revoke */}
+      {/* ── Confirm Revoke Modal ───────────────────────────────────────────── */}
       {keyToRevoke && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-lg border border-border-default bg-bg-surface p-6 shadow-xl space-y-4">
-            <h2 className="text-base font-semibold text-text-primary">Revoke API Key</h2>
-            <p className="text-xs text-text-secondary">
-              Are you sure you want to revoke the API key for{' '}
-              <strong className="text-text-primary font-mono">{keyToRevoke.app_name}</strong>? Any external application using this key will immediately be blocked from sending logs.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-border-default bg-bg-surface p-6 shadow-2xl space-y-4">
+            <h2 className="text-base font-semibold text-severity-critical flex items-center gap-2">
+              <span>⚠</span> Revoke Project Source
+            </h2>
+            <p className="text-xs text-text-secondary leading-relaxed">
+              Are you sure you want to revoke credentials for{' '}
+              <strong className="text-text-primary font-mono">{keyToRevoke.app_name}</strong>? Any application or agent using this API key will immediately be denied from streaming logs into Grid Sentry.
             </p>
 
             <div className="flex justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setKeyToRevoke(null)}
-                className="rounded border border-border-default px-3.5 py-1.5 text-xs text-text-secondary hover:bg-bg-surface-raised transition-colors"
+                className="rounded-lg border border-border-default px-4 py-2 text-xs font-medium text-text-secondary hover:bg-bg-surface-raised transition-colors"
               >
                 Cancel
               </button>
@@ -681,9 +302,9 @@ app.post('/login', (req, res) => {
                 type="button"
                 onClick={handleConfirmRevoke}
                 disabled={revoking}
-                className="rounded bg-severity-critical px-3.5 py-1.5 text-xs font-medium text-white hover:bg-severity-critical/90 disabled:opacity-50 transition-colors"
+                className="rounded-lg bg-severity-critical px-4 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {revoking ? 'Revoking...' : 'Revoke Key'}
+                {revoking ? 'Revoking…' : 'Confirm Revocation'}
               </button>
             </div>
           </div>

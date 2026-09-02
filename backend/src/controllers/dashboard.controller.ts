@@ -14,8 +14,8 @@ export async function getSummary(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest('Invalid lookbackHours parameter');
   }
 
-  const userId = req.user?.id ?? null;
-  await seedDemoAlertsIfEmpty(userId);
+  if (!req.user) throw ApiError.unauthorized();
+  await seedDemoAlertsIfEmpty(req.user.id, req.user.orgId);
 
   const summary = await DashboardModel.getDashboardSummary(parsed.data.lookbackHours);
   res.status(200).json({ status: 'ok', data: summary });
@@ -27,8 +27,8 @@ export async function getGeo(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest('Invalid lookbackHours parameter');
   }
 
-  const userId = req.user?.id ?? null;
-  await seedDemoAlertsIfEmpty(userId);
+  if (!req.user) throw ApiError.unauthorized();
+  await seedDemoAlertsIfEmpty(req.user.id, req.user.orgId);
 
   const geo = await DashboardModel.getGeoMetrics(parsed.data.lookbackHours);
   res.status(200).json({ status: 'ok', data: geo });

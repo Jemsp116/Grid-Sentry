@@ -29,18 +29,20 @@ export async function listAlerts(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest(`Invalid query parameters: ${issues}`);
   }
 
-  const userId = req.user?.id ?? null;
-  await AlertsModel.seedDemoAlertsIfEmpty(userId);
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
+  await AlertsModel.seedDemoAlertsIfEmpty(req.user.id, orgId);
 
-  const result = await AlertsModel.getAlerts(parsed.data);
+  const result = await AlertsModel.getAlerts({ ...parsed.data, orgId });
   res.status(200).json({ status: 'ok', data: result });
 }
 
 export async function getAlert(req: Request, res: Response): Promise<void> {
   const id = parseInt(req.params.id ?? '', 10);
   if (isNaN(id)) throw ApiError.badRequest('Invalid alert ID');
+  if (!req.user) throw ApiError.unauthorized();
 
-  const alert = await AlertsModel.getAlertById(id);
+  const alert = await AlertsModel.getAlertById(id, req.user.orgId);
   if (!alert) throw ApiError.notFound('Alert not found');
 
   res.status(200).json({ status: 'ok', data: alert });
@@ -51,6 +53,8 @@ import { logAuditEvent } from '../utils/auditLogger.js';
 export async function updateStatus(req: Request, res: Response): Promise<void> {
   const id = parseInt(req.params.id ?? '', 10);
   if (isNaN(id)) throw ApiError.badRequest('Invalid alert ID');
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
 
   const parsed = UpdateStatusSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -58,17 +62,19 @@ export async function updateStatus(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest(`Invalid status update: ${issues}`);
   }
 
-  const existingAlert = await AlertsModel.getAlertById(id);
+  const existingAlert = await AlertsModel.getAlertById(id, orgId);
 
   const updated = await AlertsModel.updateAlertStatus(
     id,
+    orgId,
     parsed.data.status,
     parsed.data.assigned_to,
   );
   if (!updated) throw ApiError.notFound('Alert not found');
 
   logAuditEvent({
-    userId: req.user?.id ?? null,
+    userId: req.user.id,
+    orgId,
     action: 'alert.status_updated',
     targetType: 'alert',
     targetId: updated.id,
@@ -85,11 +91,13 @@ export async function updateStatus(req: Request, res: Response): Promise<void> {
 export async function listNotes(req: Request, res: Response): Promise<void> {
   const alertId = parseInt(req.params.id ?? '', 10);
   if (isNaN(alertId)) throw ApiError.badRequest('Invalid alert ID');
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
 
-  const alert = await AlertsModel.getAlertById(alertId);
+  const alert = await AlertsModel.getAlertById(alertId, orgId);
   if (!alert) throw ApiError.notFound('Alert not found');
 
-  const notes = await AlertsModel.getAlertNotes(alertId);
+  const notes = await AlertsModel.getAlertNotes(alertId, orgId);
   res.status(200).json({ status: 'ok', data: notes });
 }
 
@@ -97,10 +105,11 @@ export async function createNote(req: Request, res: Response): Promise<void> {
   const alertId = parseInt(req.params.id ?? '', 10);
   if (isNaN(alertId)) throw ApiError.badRequest('Invalid alert ID');
 
-  const userId = req.user?.id;
-  if (!userId) throw ApiError.unauthorized();
+  if (!req.user) throw ApiError.unauthorized();
+  const userId = req.user.id;
+  const orgId = req.user.orgId;
 
-  const alert = await AlertsModel.getAlertById(alertId);
+  const alert = await AlertsModel.getAlertById(alertId, orgId);
   if (!alert) throw ApiError.notFound('Alert not found');
 
   const parsed = CreateNoteSchema.safeParse(req.body);
@@ -109,10 +118,11 @@ export async function createNote(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest(`Invalid note input: ${issues}`);
   }
 
-  const note = await AlertsModel.addAlertNote(alertId, userId, parsed.data.note);
+  const note = await AlertsModel.addAlertNote(alertId, userId, orgId, parsed.data.note);
 
   logAuditEvent({
     userId,
+    orgId,
     action: 'alert.note_added',
     targetType: 'alert',
     targetId: alertId,
@@ -124,8 +134,9 @@ export async function createNote(req: Request, res: Response): Promise<void> {
 export async function getRawLogs(req: Request, res: Response): Promise<void> {
   const alertId = parseInt(req.params.id ?? '', 10);
   if (isNaN(alertId)) throw ApiError.badRequest('Invalid alert ID');
+  if (!req.user) throw ApiError.unauthorized();
 
-  const alert = await AlertsModel.getAlertById(alertId);
+  const alert = await AlertsModel.getAlertById(alertId, req.user.orgId);
   if (!alert) throw ApiError.notFound('Alert not found');
 
   const logIds: string[] = Array.isArray(alert.opensearch_log_ids)
@@ -189,8 +200,12 @@ export function formatAlertsCsv(alerts: any[]): string {
 }
 
 export async function exportAlerts(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
+
   const format = (req.query.format as string) === 'json' ? 'json' : 'csv';
   const filter = {
+    orgId,
     severity: (req.query.severity as any) || undefined,
     status: (req.query.status as any) || undefined,
     sourceIp: (req.query.sourceIp as string) || undefined,
@@ -199,8 +214,7 @@ export async function exportAlerts(req: Request, res: Response): Promise<void> {
     pageSize: 10000,
   };
 
-  const userId = req.user?.id ?? null;
-  await AlertsModel.seedDemoAlertsIfEmpty(userId);
+  await AlertsModel.seedDemoAlertsIfEmpty(req.user.id, orgId);
 
   const result = await AlertsModel.getAlerts(filter);
 

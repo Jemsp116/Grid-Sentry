@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grid-sentry-client"
+version = "1.0.0"
+description = "Official Python client SDK for Grid Sentry SOC & SIEM platform."
+readme = "README.md"
+authors = [{ name = "Grid Sentry Team", email = "support@gridsentry.io" }]
+license = { text = "MIT" }
+keywords = ["security", "soc", "siem", "logging", "telemetry", "gridsentry"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Logging",
+    "Topic :: Security",
+]
+dependencies = []
+
+[project.optional-dependencies]
+async = ["aiohttp>=3.8.0"]
+test = ["pytest>=7.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

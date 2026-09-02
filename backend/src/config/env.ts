@@ -33,6 +33,17 @@ const EnvSchema = z.object({
   KMS_MASTER_KEY: z.string().default('grid-sentry-byodb-kms-secret-master-key-2026'),
 
   INGEST_API_KEY: z.string().default('gs_live_secret_key_2026'),
+
+  /** App base URL used in invitation email links (no trailing slash). */
+  APP_BASE_URL: z.string().url().optional(),
+
+  /** SMTP settings for invitation emails (all optional; falls back to dev logging). */
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().optional(),
+  SMTP_SECURE: z.enum(['true', 'false']).optional().transform((v) => v === 'true'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
 });
 
 function loadDotenvFiles() {

@@ -40,28 +40,30 @@ function docToRuleRow(doc: IRuleDoc): RuleRow {
   };
 }
 
-export async function getRules(): Promise<RuleRow[]> {
-  const docs = await RuleModel.find().sort({ id: -1 });
+export async function getRules(orgId: string): Promise<RuleRow[]> {
+  const docs = await RuleModel.find({ orgId }).sort({ id: -1 });
   return docs.map(docToRuleRow);
 }
 
-export async function getActiveRules(): Promise<RuleRow[]> {
-  const docs = await RuleModel.find({ is_active: true }).sort({ id: 1 });
+export async function getActiveRules(orgId: string): Promise<RuleRow[]> {
+  const docs = await RuleModel.find({ orgId, is_active: true }).sort({ id: 1 });
   return docs.map(docToRuleRow);
 }
 
-export async function getRuleById(id: number): Promise<RuleRow | null> {
-  const doc = await RuleModel.findOne({ id });
+export async function getRuleById(id: number, orgId: string): Promise<RuleRow | null> {
+  const doc = await RuleModel.findOne({ id, orgId });
   return doc ? docToRuleRow(doc) : null;
 }
 
 export async function createRule(
   input: CreateRuleInput,
   userId: number | null,
+  orgId: string,
 ): Promise<RuleRow> {
   const nextId = await getNextSequence('rules');
   const doc = await RuleModel.create({
     id: nextId,
+    orgId,
     name: input.name,
     description: input.description ?? null,
     log_source: input.log_source,
@@ -79,6 +81,7 @@ export async function createRule(
 
 export async function updateRule(
   id: number,
+  orgId: string,
   input: UpdateRuleInput,
 ): Promise<RuleRow | null> {
   const updateFields: any = { updated_at: new Date() };
@@ -94,22 +97,22 @@ export async function updateRule(
   if (input.action_on_trigger !== undefined) updateFields.action_on_trigger = input.action_on_trigger;
   if (input.is_active !== undefined) updateFields.is_active = input.is_active;
 
-  const doc = await RuleModel.findOneAndUpdate({ id }, updateFields, { new: true });
+  const doc = await RuleModel.findOneAndUpdate({ id, orgId }, updateFields, { new: true });
   return doc ? docToRuleRow(doc) : null;
 }
 
-export async function toggleRuleActive(id: number, isActive: boolean): Promise<RuleRow | null> {
-  const doc = await RuleModel.findOneAndUpdate({ id }, { is_active: isActive, updated_at: new Date() }, { new: true });
+export async function toggleRuleActive(id: number, orgId: string, isActive: boolean): Promise<RuleRow | null> {
+  const doc = await RuleModel.findOneAndUpdate({ id, orgId }, { is_active: isActive, updated_at: new Date() }, { new: true });
   return doc ? docToRuleRow(doc) : null;
 }
 
-export async function deleteRule(id: number): Promise<boolean> {
-  const res = await RuleModel.deleteOne({ id });
+export async function deleteRule(id: number, orgId: string): Promise<boolean> {
+  const res = await RuleModel.deleteOne({ id, orgId });
   return res.deletedCount > 0;
 }
 
-export async function seedDefaultRulesIfEmpty(userId: number | null): Promise<void> {
-  const count = await RuleModel.countDocuments();
+export async function seedDefaultRulesIfEmpty(userId: number | null, orgId: string): Promise<void> {
+  const count = await RuleModel.countDocuments({ orgId });
   if (count > 0) return;
 
   const defaultRules: CreateRuleInput[] = [
@@ -146,6 +149,6 @@ export async function seedDefaultRulesIfEmpty(userId: number | null): Promise<vo
   ];
 
   for (const rule of defaultRules) {
-    await createRule(rule, userId);
+    await createRule(rule, userId, orgId);
   }
 }

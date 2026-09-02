@@ -56,8 +56,8 @@ async function enrichOne(doc: IIPBlocklistDoc): Promise<BlocklistWithMetadata> {
   return docToMetadata(doc, rules, userEmails);
 }
 
-export async function getBlocklist(): Promise<BlocklistWithMetadata[]> {
-  const docs = await IPBlocklistModel.find().sort({ created_at: -1 });
+export async function getBlocklist(orgId: string): Promise<BlocklistWithMetadata[]> {
+  const docs = await IPBlocklistModel.find({ orgId }).sort({ created_at: -1 });
   const [rules, userEmails] = await Promise.all([
     loadRules(docs.map((d) => d.triggered_by_rule_id)),
     loadUserEmails(docs.map((d) => d.added_by)),
@@ -65,8 +65,8 @@ export async function getBlocklist(): Promise<BlocklistWithMetadata[]> {
   return docs.map((d) => docToMetadata(d, rules, userEmails));
 }
 
-export async function findByIp(ipAddress: string): Promise<BlocklistRow | null> {
-  const doc = await IPBlocklistModel.findOne({ ip_address: ipAddress.trim() });
+export async function findByIp(orgId: string, ipAddress: string): Promise<BlocklistRow | null> {
+  const doc = await IPBlocklistModel.findOne({ orgId, ip_address: ipAddress.trim() });
   if (!doc) return null;
   return {
     id: doc.id,
@@ -80,13 +80,14 @@ export async function findByIp(ipAddress: string): Promise<BlocklistRow | null> 
 }
 
 export async function addBlocklistIp(
+  orgId: string,
   ipAddress: string,
   reason: string | null,
   addedBy: number | null,
   expiresAt?: string | null,
 ): Promise<{ entry: BlocklistWithMetadata; alreadyBlocked: boolean }> {
   const cleanIp = ipAddress.trim();
-  const existingDoc = await IPBlocklistModel.findOne({ ip_address: cleanIp });
+  const existingDoc = await IPBlocklistModel.findOne({ orgId, ip_address: cleanIp });
   if (existingDoc) {
     const entry = await enrichOne(existingDoc);
     return { entry, alreadyBlocked: true };
@@ -95,6 +96,7 @@ export async function addBlocklistIp(
   const nextId = await getNextSequence('ip_blocklist');
   const doc = await IPBlocklistModel.create({
     id: nextId,
+    orgId,
     ip_address: cleanIp,
     reason: reason ?? null,
     added_by: addedBy ?? null,
@@ -105,7 +107,7 @@ export async function addBlocklistIp(
   return { entry, alreadyBlocked: false };
 }
 
-export async function removeBlocklistIp(id: number): Promise<boolean> {
-  const res = await IPBlocklistModel.deleteOne({ id });
+export async function removeBlocklistIp(id: number, orgId: string): Promise<boolean> {
+  const res = await IPBlocklistModel.deleteOne({ id, orgId });
   return res.deletedCount > 0;
 }

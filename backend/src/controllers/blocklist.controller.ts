@@ -11,8 +11,9 @@ const AddBlockSchema = z.object({
     .nullable(),
 });
 
-export async function listBlocklist(_req: Request, res: Response): Promise<void> {
-  const list = await BlocklistModel.getBlocklist();
+export async function listBlocklist(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const list = await BlocklistModel.getBlocklist(req.user.orgId);
   res.status(200).json({ status: 'ok', data: list });
 }
 
@@ -25,8 +26,12 @@ export async function addBlock(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest(`Invalid IP block input: ${issues}`);
   }
 
-  const userId = req.user?.id ?? null;
+  if (!req.user) throw ApiError.unauthorized();
+  const userId = req.user.id;
+  const orgId = req.user.orgId;
+
   const { entry, alreadyBlocked } = await BlocklistModel.addBlocklistIp(
+    orgId,
     parsed.data.ipAddress,
     parsed.data.reason ?? null,
     userId,
@@ -36,6 +41,7 @@ export async function addBlock(req: Request, res: Response): Promise<void> {
   if (!alreadyBlocked) {
     logAuditEvent({
       userId,
+      orgId,
       action: 'blocklist.ip_blocked',
       targetType: 'ip_blocklist',
       targetId: entry.id,
@@ -54,12 +60,15 @@ export async function addBlock(req: Request, res: Response): Promise<void> {
 export async function removeBlock(req: Request, res: Response): Promise<void> {
   const id = parseInt(req.params.id ?? '', 10);
   if (isNaN(id)) throw ApiError.badRequest('Invalid blocklist entry ID');
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
 
-  const removed = await BlocklistModel.removeBlocklistIp(id);
+  const removed = await BlocklistModel.removeBlocklistIp(id, orgId);
   if (!removed) throw ApiError.notFound('Blocklist entry not found');
 
   logAuditEvent({
-    userId: req.user?.id ?? null,
+    userId: req.user.id,
+    orgId,
     action: 'blocklist.ip_unblocked',
     targetType: 'ip_blocklist',
     targetId: id,

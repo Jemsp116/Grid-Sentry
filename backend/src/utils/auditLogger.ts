@@ -3,6 +3,7 @@ import { logger } from '../config/logger.js';
 
 export interface AuditEventInput {
   userId?: number | null;
+  orgId?: string | null;
   action: string;
   targetType: string;
   targetId?: number | null;
@@ -18,6 +19,7 @@ export async function logAuditEvent(event: AuditEventInput): Promise<void> {
     const nextId = await getNextSequence('audit_log');
     await AuditLogModel.create({
       id: nextId,
+      orgId: event.orgId ?? null,
       user_id: event.userId ?? null,
       action: event.action,
       target_type: event.targetType,
@@ -31,3 +33,5 @@ export async function logAuditEvent(event: AuditEventInput): Promise<void> {
     });
   }
 }
+
+

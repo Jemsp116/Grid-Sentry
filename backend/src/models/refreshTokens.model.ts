@@ -57,6 +57,7 @@ export interface SessionStatus {
   user_id: number;
   is_active: boolean;
   role: string;
+  orgId: string;
 }
 
 export async function getSessionStatus(sid: number): Promise<SessionStatus | null> {
@@ -72,5 +73,6 @@ export async function getSessionStatus(sid: number): Promise<SessionStatus | nul
     user_id: userDoc.id,
     is_active: userDoc.is_active,
     role: userDoc.role,
+    orgId: userDoc.orgId ? userDoc.orgId.toString() : '',
   };
 }

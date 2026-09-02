@@ -13,6 +13,7 @@ export interface AuditLogRow {
 }
 
 export interface AuditLogFilterParams {
+  orgId: string;
   action?: string;
   targetType?: string;
   userId?: number;
@@ -47,10 +48,10 @@ function docToAuditRow(doc: IAuditLogDoc, userEmails: Map<number, string>): Audi
   };
 }
 
-export async function getAuditLogs(params: AuditLogFilterParams = {}): Promise<AuditLogsResponse> {
-  const { action, targetType, userId, from, to, page = 1, pageSize = 50 } = params;
+export async function getAuditLogs(params: AuditLogFilterParams): Promise<AuditLogsResponse> {
+  const { orgId, action, targetType, userId, from, to, page = 1, pageSize = 50 } = params;
 
-  const queryFilter: any = {};
+  const queryFilter: any = { orgId };
   if (action) queryFilter.action = action;
   if (targetType) queryFilter.target_type = targetType;
   if (userId) queryFilter.user_id = userId;
@@ -81,8 +82,8 @@ export async function getAuditLogs(params: AuditLogFilterParams = {}): Promise<A
   };
 }
 
-export async function seedDemoAuditLogsIfEmpty(adminUserId: number | null): Promise<void> {
-  const count = await AuditLogModel.countDocuments();
+export async function seedDemoAuditLogsIfEmpty(adminUserId: number | null, orgId: string): Promise<void> {
+  const count = await AuditLogModel.countDocuments({ orgId });
   if (count > 0) return;
 
   const demoEvents = [
@@ -113,6 +114,7 @@ export async function seedDemoAuditLogsIfEmpty(adminUserId: number | null): Prom
     const nextId = await getNextSequence('audit_log');
     await AuditLogModel.create({
       id: nextId,
+      orgId,
       ...e,
     });
   }

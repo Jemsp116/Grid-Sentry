@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext.js';
 import Login from './pages/Login.js';
+import Signup from './pages/Signup.js';
 import Overview from './pages/Overview.js';
 import LogExplorer from './pages/LogExplorer.js';
 import RuleManagement from './pages/RuleManagement.js';
@@ -13,9 +15,28 @@ import MitreMatrix from './pages/MitreMatrix.js';
 import ConnectedSources from './pages/ConnectedSources.js';
 import DatabaseSettings from './pages/DatabaseSettings.js';
 import AppShell from './components/AppShell.js';
+import ProtectedRoute from './components/ProtectedRoute.js';
 
 export default function App() {
   const { status } = useAuth();
+  
+  // Inspect URL for invite parameters or /signup path
+  const searchParams = new URLSearchParams(window.location.search);
+  const inviteToken = searchParams.get('invite')?.trim() || null;
+  const isSignupPath = window.location.pathname === '/signup';
+
+  const [authView, setAuthView] = useState<'login' | 'signup'>(
+    inviteToken || isSignupPath ? 'signup' : 'login',
+  );
+
+  // If the user arrived with an invite token, prioritize the invite validation screen
+  if (inviteToken) {
+    return <Signup onSwitchToLogin={() => {
+      // Clear invite param from URL if switching to login
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setAuthView('login');
+    }} />;
+  }
 
   if (status === 'loading') {
     return (
@@ -29,24 +50,77 @@ export default function App() {
   }
 
   if (status !== 'authenticated') {
-    return <Login />;
+    return authView === 'signup' ? (
+      <Signup onSwitchToLogin={() => setAuthView('login')} />
+    ) : (
+      <Login onSwitchToSignup={() => setAuthView('signup')} />
+    );
   }
 
   return (
     <BrowserRouter>
       <Routes>
         <Route element={<AppShell />}>
+          {/* Universal SOC Routes (Viewer, Analyst, Admin) */}
           <Route index element={<Overview />} />
           <Route path="/alerts" element={<AlertFeed />} />
           <Route path="/alerts/:id" element={<AlertDetail />} />
           <Route path="/mitre" element={<MitreMatrix />} />
           <Route path="/logs" element={<LogExplorer />} />
-          <Route path="/rules" element={<RuleManagement />} />
-          <Route path="/users" element={<UserManagement />} />
-          <Route path="/connected-sources" element={<ConnectedSources />} />
-          <Route path="/settings/database" element={<DatabaseSettings />} />
-          <Route path="/blocklist" element={<IPBlocklist />} />
-          <Route path="/audit" element={<AuditLog />} />
+
+          {/* Triage & Defense Routes (Analyst & Admin) */}
+          <Route
+            path="/blocklist"
+            element={
+              <ProtectedRoute allowedRoles={['analyst', 'admin']}>
+                <IPBlocklist />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Administration Routes (Admin Only) */}
+          <Route
+            path="/rules"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <RuleManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <UserManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/connected-sources"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <ConnectedSources />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/database"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <DatabaseSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/audit"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AuditLog />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

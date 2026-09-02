@@ -48,6 +48,7 @@ export interface AlertNoteRow {
 }
 
 export interface AlertFilterParams {
+  orgId: string;
   severity?: SeverityLevel;
   status?: AlertStatus;
   sourceIp?: string;
@@ -99,22 +100,22 @@ async function enrichOne(doc: IAlertDoc): Promise<AlertWithMetadata> {
   return enrichAlertDoc(doc, rules, userEmails);
 }
 
-export async function getAlerts(params: AlertFilterParams = {}): Promise<{
+export async function getAlerts(params: AlertFilterParams): Promise<{
   alerts: AlertWithMetadata[];
   total: number;
   page: number;
   pageSize: number;
   totalPages: number;
 }> {
-  const { severity, status, sourceIp, mitreId, page = 1, pageSize = 50 } = params;
+  const { orgId, severity, status, sourceIp, mitreId, page = 1, pageSize = 50 } = params;
 
-  const queryFilter: any = {};
+  const queryFilter: any = { orgId };
   if (severity) queryFilter.severity = severity;
   if (status) queryFilter.status = status;
   if (sourceIp) queryFilter.source_ip = { $regex: sourceIp, $options: 'i' };
 
   if (mitreId) {
-    const matchingRules = await RuleModel.find({ mitre_technique_id: mitreId }, { id: 1 });
+    const matchingRules = await RuleModel.find({ orgId, mitre_technique_id: mitreId }, { id: 1 });
     const ruleIds = matchingRules.map((r) => r.id);
     queryFilter.rule_id = { $in: ruleIds };
   }
@@ -142,25 +143,26 @@ export async function getAlerts(params: AlertFilterParams = {}): Promise<{
   };
 }
 
-export async function getAlertById(id: number): Promise<AlertWithMetadata | null> {
-  const doc = await AlertModel.findOne({ id });
+export async function getAlertById(id: number, orgId: string): Promise<AlertWithMetadata | null> {
+  const doc = await AlertModel.findOne({ id, orgId });
   return doc ? await enrichOne(doc) : null;
 }
 
 export async function updateAlertStatus(
   id: number,
+  orgId: string,
   status: AlertStatus,
   assignedTo?: number | null,
 ): Promise<AlertWithMetadata | null> {
   const updateFields: any = { status };
   if (assignedTo !== undefined) updateFields.assigned_to = assignedTo;
 
-  const doc = await AlertModel.findOneAndUpdate({ id }, updateFields, { new: true });
+  const doc = await AlertModel.findOneAndUpdate({ id, orgId }, updateFields, { new: true });
   return doc ? await enrichOne(doc) : null;
 }
 
-export async function getAlertNotes(alertId: number): Promise<AlertNoteRow[]> {
-  const noteDocs = await AlertNoteModel.find({ alert_id: alertId }).sort({ created_at: 1 });
+export async function getAlertNotes(alertId: number, orgId: string): Promise<AlertNoteRow[]> {
+  const noteDocs = await AlertNoteModel.find({ alert_id: alertId, orgId }).sort({ created_at: 1 });
   const userEmails = await loadUserEmails(noteDocs.map((n) => n.user_id));
 
   return noteDocs.map((n: IAlertNoteDoc) => ({
@@ -176,11 +178,13 @@ export async function getAlertNotes(alertId: number): Promise<AlertNoteRow[]> {
 export async function addAlertNote(
   alertId: number,
   userId: number,
+  orgId: string,
   note: string,
 ): Promise<AlertNoteRow> {
   const nextId = await getNextSequence('alert_notes');
   const doc = await AlertNoteModel.create({
     id: nextId,
+    orgId,
     alert_id: alertId,
     user_id: userId,
     note,
@@ -198,12 +202,12 @@ export async function addAlertNote(
   };
 }
 
-export async function seedDemoAlertsIfEmpty(userId: number | null): Promise<void> {
-  const count = await AlertModel.countDocuments();
+export async function seedDemoAlertsIfEmpty(userId: number | null, orgId: string): Promise<void> {
+  const count = await AlertModel.countDocuments({ orgId });
   if (count > 0) return;
 
-  await seedDefaultRulesIfEmpty(userId);
-  const rules = await getRules();
+  await seedDefaultRulesIfEmpty(userId, orgId);
+  const rules = await getRules(orgId);
   if (rules.length === 0) return;
 
   const bruteForceRule = rules.find((r) => r.mitre_technique_id === 'T1110') ?? rules[0]!;
@@ -211,6 +215,7 @@ export async function seedDemoAlertsIfEmpty(userId: number | null): Promise<void
 
   const demoAlerts = [
     {
+      orgId,
       rule_id: bruteForceRule.id,
       source_ip: '192.168.1.105',
       target_host: 'soc_ssh_target',
@@ -220,6 +225,7 @@ export async function seedDemoAlertsIfEmpty(userId: number | null): Promise<void
       assigned_to: userId,
     },
     {
+      orgId,
       rule_id: invalidUserRule.id,
       source_ip: '10.0.0.42',
       target_host: 'soc_ssh_target',

@@ -11,17 +11,19 @@ import { opensearch } from '../config/opensearch.js';
 import { SOC_LOGS_PATTERN } from '../utils/opensearch.queries.js';
 
 export async function listRules(req: Request, res: Response): Promise<void> {
-  const userId = req.user?.id ?? null;
-  await RulesModel.seedDefaultRulesIfEmpty(userId);
-  const rules = await RulesModel.getRules();
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
+  await RulesModel.seedDefaultRulesIfEmpty(req.user.id, orgId);
+  const rules = await RulesModel.getRules(orgId);
   res.status(200).json({ status: 'ok', data: rules });
 }
 
 export async function getRule(req: Request, res: Response): Promise<void> {
   const id = parseInt(req.params.id ?? '', 10);
   if (isNaN(id)) throw ApiError.badRequest('Invalid rule ID');
+  if (!req.user) throw ApiError.unauthorized();
 
-  const rule = await RulesModel.getRuleById(id);
+  const rule = await RulesModel.getRuleById(id, req.user.orgId);
   if (!rule) throw ApiError.notFound('Rule not found');
 
   res.status(200).json({ status: 'ok', data: rule });
@@ -36,11 +38,14 @@ export async function createRule(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest(`Invalid rule input: ${issues}`);
   }
 
-  const userId = req.user?.id ?? null;
-  const rule = await RulesModel.createRule(parsed.data, userId);
+  if (!req.user) throw ApiError.unauthorized();
+  const userId = req.user.id;
+  const orgId = req.user.orgId;
+  const rule = await RulesModel.createRule(parsed.data, userId, orgId);
 
   logAuditEvent({
     userId,
+    orgId,
     action: 'rule.created',
     targetType: 'rule',
     targetId: rule.id,
@@ -53,6 +58,8 @@ export async function createRule(req: Request, res: Response): Promise<void> {
 export async function updateRule(req: Request, res: Response): Promise<void> {
   const id = parseInt(req.params.id ?? '', 10);
   if (isNaN(id)) throw ApiError.badRequest('Invalid rule ID');
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
 
   const parsed = UpdateRuleSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -60,11 +67,12 @@ export async function updateRule(req: Request, res: Response): Promise<void> {
     throw ApiError.badRequest(`Invalid rule input: ${issues}`);
   }
 
-  const updated = await RulesModel.updateRule(id, parsed.data);
+  const updated = await RulesModel.updateRule(id, orgId, parsed.data);
   if (!updated) throw ApiError.notFound('Rule not found');
 
   logAuditEvent({
-    userId: req.user?.id ?? null,
+    userId: req.user.id,
+    orgId,
     action: 'rule.updated',
     targetType: 'rule',
     targetId: updated.id,
@@ -77,17 +85,20 @@ export async function updateRule(req: Request, res: Response): Promise<void> {
 export async function toggleRule(req: Request, res: Response): Promise<void> {
   const id = parseInt(req.params.id ?? '', 10);
   if (isNaN(id)) throw ApiError.badRequest('Invalid rule ID');
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
 
   const { is_active } = req.body ?? {};
   if (typeof is_active !== 'boolean') {
     throw ApiError.badRequest('is_active boolean property is required');
   }
 
-  const updated = await RulesModel.toggleRuleActive(id, is_active);
+  const updated = await RulesModel.toggleRuleActive(id, orgId, is_active);
   if (!updated) throw ApiError.notFound('Rule not found');
 
   logAuditEvent({
-    userId: req.user?.id ?? null,
+    userId: req.user.id,
+    orgId,
     action: 'rule.toggled',
     targetType: 'rule',
     targetId: updated.id,
@@ -100,12 +111,15 @@ export async function toggleRule(req: Request, res: Response): Promise<void> {
 export async function deleteRule(req: Request, res: Response): Promise<void> {
   const id = parseInt(req.params.id ?? '', 10);
   if (isNaN(id)) throw ApiError.badRequest('Invalid rule ID');
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
 
-  const deleted = await RulesModel.deleteRule(id);
+  const deleted = await RulesModel.deleteRule(id, orgId);
   if (!deleted) throw ApiError.notFound('Rule not found');
 
   logAuditEvent({
-    userId: req.user?.id ?? null,
+    userId: req.user.id,
+    orgId,
     action: 'rule.deleted',
     targetType: 'rule',
     targetId: id,

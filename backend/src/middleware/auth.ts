@@ -18,6 +18,7 @@ function extractBearer(req: Request): string | null {
  *   - session revoked / missing / expired  -> 401 (logged out)
  *   - owning account suspended              -> 401 (logged out)
  *   - role taken from DB, not from the token (role changes apply immediately)
+ *   - orgId taken from DB, never from client input or JWT claim alone
  */
 export async function authenticate(
   req: Request,
@@ -28,7 +29,7 @@ export async function authenticate(
     const token = extractBearer(req);
     if (!token) throw ApiError.unauthorized();
 
-    let payload: { sub: number; role: Role; sid: number };
+    let payload: { sub: number; role: Role; orgId: string; sid: number };
     try {
       payload = verifyAccessToken(token);
     } catch {
@@ -43,7 +44,13 @@ export async function authenticate(
       throw ApiError.unauthorized('This account has been suspended.', 'account_suspended');
     }
 
-    req.user = { id: session.user_id, role: session.role as Role, sid: payload.sid };
+    // orgId is sourced from the DB session join — never from client input.
+    req.user = {
+      id: session.user_id,
+      role: session.role as Role,
+      orgId: session.orgId,
+      sid: payload.sid,
+    };
     next();
   } catch (err) {
     next(err);

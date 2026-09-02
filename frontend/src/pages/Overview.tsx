@@ -18,6 +18,7 @@ import {
   type DashboardSummary,
   type GeoLocationMetric,
 } from '../api/dashboard.js';
+import ConnectSourceWizard from '../components/ConnectSourceWizard.js';
 
 interface HealthResponse {
   status: string;
@@ -43,7 +44,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 export default function Overview() {
-  const { authFetch } = useAuth();
+  const { authFetch, user } = useAuth();
 
   const [lookbackHours, setLookbackHours] = useState(24);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -52,6 +53,7 @@ export default function Overview() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthErr, setHealthErr] = useState(false);
   const [probeResults, setProbeResults] = useState<Record<string, number>>({});
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,31 +117,60 @@ export default function Overview() {
       {/* Header & Lookback Filter */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-text-primary">SOC Overview Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-text-primary">SOC Overview Dashboard</h1>
+            <span
+              className={`rounded border px-2.5 py-0.5 text-xs font-mono font-semibold uppercase ${
+                user?.role === 'admin'
+                  ? 'border-severity-critical/40 bg-severity-critical/10 text-severity-critical'
+                  : user?.role === 'analyst'
+                    ? 'border-severity-high/40 bg-severity-high/10 text-severity-high'
+                    : 'border-accent-primary/40 bg-accent-primary/10 text-accent-primary'
+              }`}
+            >
+              {user?.role ?? 'viewer'} Scope
+            </span>
+          </div>
           <p className="mt-1 text-sm text-text-secondary">
-            Real-time security posture, threat intelligence, and log ingestion metrics.
+            {user?.role === 'admin'
+              ? 'Full administrative operations: Detection rules, user accounts, tenant storage, and real-time logs.'
+              : user?.role === 'analyst'
+                ? 'SOC Analyst console: Incident response, threat investigation, alert status triage, and active IP blocklisting.'
+                : 'Operator console: Read-only visibility into live security telemetry, alert streams, and MITRE matrix.'}
           </p>
         </div>
 
-        {/* Time Range Preset Pills */}
-        <div className="flex rounded border border-border-default bg-bg-surface p-1">
-          {[
-            { label: 'Last 24h', hours: 24 },
-            { label: 'Last 7d', hours: 168 },
-            { label: 'Last 30d', hours: 720 },
-          ].map((preset) => (
+        {/* Actions & Time Range Preset Pills */}
+        <div className="flex flex-wrap items-center gap-3">
+          {user?.role === 'admin' && (
             <button
-              key={preset.hours}
-              onClick={() => setLookbackHours(preset.hours)}
-              className={`rounded px-3 py-1 text-xs transition-colors ${
-                lookbackHours === preset.hours
-                  ? 'bg-accent-primary text-bg-base font-semibold'
-                  : 'text-text-secondary hover:text-text-primary'
-              }`}
+              onClick={() => setIsWizardOpen(true)}
+              className="flex items-center gap-1.5 rounded bg-accent-primary px-3 py-1.5 text-xs font-semibold text-bg-base hover:opacity-90 shadow-sm"
             >
-              {preset.label}
+              <span>+</span>
+              <span>Connect a Project</span>
             </button>
-          ))}
+          )}
+
+          <div className="flex rounded border border-border-default bg-bg-surface p-1">
+            {[
+              { label: 'Last 24h', hours: 24 },
+              { label: 'Last 7d', hours: 168 },
+              { label: 'Last 30d', hours: 720 },
+            ].map((preset) => (
+              <button
+                key={preset.hours}
+                onClick={() => setLookbackHours(preset.hours)}
+                className={`rounded px-3 py-1 text-xs transition-colors ${
+                  lookbackHours === preset.hours
+                    ? 'bg-accent-primary text-bg-base font-semibold'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -413,6 +444,13 @@ export default function Overview() {
           })}
         </div>
       </div>
+
+      {/* Guided Wizard Modal */}
+      <ConnectSourceWizard
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onSuccess={loadDashboard}
+      />
     </div>
   );
 }

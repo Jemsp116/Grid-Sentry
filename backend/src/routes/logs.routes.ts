@@ -14,7 +14,7 @@ import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parseOrThrow } from '../utils/validate.js';
 import { logger } from '../config/logger.js';
-import { findActiveApiKeyByHash, hashApiKey, updateApiKeyLastUsed } from '../models/apiKeys.model.js';
+import { findActiveApiKeyByHash, hashApiKey, recordApiKeyIngestEvent } from '../models/apiKeys.model.js';
 import { checkApiKeyRateLimit } from '../utils/apiKeyRateLimiter.js';
 
 /**
@@ -114,10 +114,13 @@ router.post(
     }
 
     if (apiKeyRecord) {
-      updateApiKeyLastUsed(apiKeyRecord.id).catch(() => {});
+      recordApiKeyIngestEvent(apiKeyRecord.id, validEvents.length).catch((err) => {
+        logger.warn('Failed to record API key ingest timestamp', { error: String(err) });
+      });
     }
 
-    const count = await ingestExternalLogs(validEvents, appName);
+    const orgId = apiKeyRecord?.orgId ? apiKeyRecord.orgId.toString() : undefined;
+    const count = await ingestExternalLogs(validEvents, appName, orgId, appName);
     res.status(200).json({ status: 'ok', ingested: count });
   }),
 );

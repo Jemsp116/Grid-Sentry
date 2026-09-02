@@ -22,10 +22,12 @@ export async function listAuditLogs(req: Request, res: Response): Promise<void> 
     throw ApiError.badRequest(`Invalid audit query parameters: ${issues}`);
   }
 
-  const userId = req.user?.id ?? null;
-  await AuditModel.seedDemoAuditLogsIfEmpty(userId);
+  if (!req.user) throw ApiError.unauthorized();
+  const orgId = req.user.orgId;
+  await AuditModel.seedDemoAuditLogsIfEmpty(req.user.id, orgId);
 
   const result = await AuditModel.getAuditLogs({
+    orgId,
     action: parsed.data.action,
     targetType: parsed.data.targetType,
     userId: parsed.data.userId,

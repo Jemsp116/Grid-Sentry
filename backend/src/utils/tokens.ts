@@ -7,6 +7,8 @@ export interface AccessTokenPayload {
   /** user id */
   sub: number;
   role: Role;
+  /** org id (MongoDB ObjectId string) — tenant discriminator */
+  orgId: string;
   /** session id — the refresh_tokens row backing this session */
   sid: number;
 }
@@ -25,6 +27,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   return {
     sub: Number(decoded.sub),
     role: decoded.role as Role,
+    orgId: String((decoded as jwt.JwtPayload).orgId ?? ''),
     sid: Number((decoded as jwt.JwtPayload).sid),
   };
 }

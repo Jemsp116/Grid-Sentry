@@ -16,13 +16,62 @@ export async function getNextSequence(name: string): Promise<number> {
   return ret.seq;
 }
 
+// ─── 0. Organization Schema ──────────────────────────────────────────────────
+export interface IOrgDoc extends Document {
+  name: string;
+  createdBy: number;   // users.id of the founding admin
+  createdAt: Date;
+}
+
+const OrgSchema = new Schema<IOrgDoc>({
+  name: { type: String, required: true, trim: true },
+  createdBy: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const OrgModel: Model<IOrgDoc> =
+  (mongoose.models.Organization as Model<IOrgDoc>) ||
+  mongoose.model<IOrgDoc>('Organization', OrgSchema);
+
+// ─── 0b. Invitation Schema ───────────────────────────────────────────────────
+export interface IInvitationDoc extends Document {
+  orgId: mongoose.Types.ObjectId;
+  email: string;
+  role: 'analyst' | 'viewer' | 'admin';
+  invitedBy: number;   // users.id of the inviting admin
+  token: string;       // SHA-256 hex, single-use
+  status: 'pending' | 'accepted' | 'expired';
+  expiresAt: Date;
+  createdAt: Date;
+}
+
+const InvitationSchema = new Schema<IInvitationDoc>({
+  orgId: { type: Schema.Types.ObjectId, required: true, index: true, ref: 'Organization' },
+  email: { type: String, required: true, lowercase: true, trim: true },
+  role: { type: String, enum: ['viewer', 'analyst', 'admin'], required: true },
+  invitedBy: { type: Number, required: true },
+  token: { type: String, required: true, unique: true, index: true },
+  status: { type: String, enum: ['pending', 'accepted', 'expired'], default: 'pending', index: true },
+  expiresAt: { type: Date, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+InvitationSchema.index({ orgId: 1, email: 1 });
+
+export const InvitationModel: Model<IInvitationDoc> =
+  (mongoose.models.Invitation as Model<IInvitationDoc>) ||
+  mongoose.model<IInvitationDoc>('Invitation', InvitationSchema);
+
 // ─── 1. User Schema ─────────────────────────────────────────────────────────
 export interface IUserDoc extends Document {
   id: number;
+  orgId: mongoose.Types.ObjectId;   // multi-tenant org membership
+  name: string;
   email: string;
   password_hash: string;
   role: 'viewer' | 'analyst' | 'admin';
   is_active: boolean;
+  invitedBy?: number | null;         // users.id of inviting admin; null for org founders
   suspended_reason?: string | null;
   suspended_at?: Date | null;
   created_at: Date;
@@ -30,14 +79,20 @@ export interface IUserDoc extends Document {
 
 const UserSchema = new Schema<IUserDoc>({
   id: { type: Number, unique: true, index: true },
+  orgId: { type: Schema.Types.ObjectId, required: true, index: true, ref: 'Organization' },
+  name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password_hash: { type: String, required: true },
   role: { type: String, enum: ['viewer', 'analyst', 'admin'], default: 'viewer' },
   is_active: { type: Boolean, default: true },
+  invitedBy: { type: Number, default: null },
   suspended_reason: { type: String, default: null },
   suspended_at: { type: Date, default: null },
   created_at: { type: Date, default: Date.now },
 });
+
+UserSchema.index({ orgId: 1, email: 1 });
+UserSchema.index({ orgId: 1, role: 1, is_active: 1 });
 
 export const UserModel: Model<IUserDoc> =
   (mongoose.models.User as Model<IUserDoc>) || mongoose.model<IUserDoc>('User', UserSchema);
@@ -68,6 +123,7 @@ export const RefreshTokenModel: Model<IRefreshTokenDoc> =
 // ─── 3. Rule Schema ─────────────────────────────────────────────────────────
 export interface IRuleDoc extends Document {
   id: number;
+  orgId: mongoose.Types.ObjectId;   // org-scoped
   name: string;
   description?: string | null;
   log_source: string;
@@ -85,6 +141,7 @@ export interface IRuleDoc extends Document {
 
 const RuleSchema = new Schema<IRuleDoc>({
   id: { type: Number, unique: true, index: true },
+  orgId: { type: Schema.Types.ObjectId, required: true, index: true, ref: 'Organization' },
   name: { type: String, required: true },
   description: { type: String, default: null },
   log_source: { type: String, required: true },
@@ -100,12 +157,16 @@ const RuleSchema = new Schema<IRuleDoc>({
   updated_at: { type: Date, default: Date.now },
 });
 
+RuleSchema.index({ orgId: 1, id: 1 });
+RuleSchema.index({ orgId: 1, is_active: 1 });
+
 export const RuleModel: Model<IRuleDoc> =
   (mongoose.models.Rule as Model<IRuleDoc>) || mongoose.model<IRuleDoc>('Rule', RuleSchema);
 
 // ─── 4. Alert Schema ────────────────────────────────────────────────────────
 export interface IAlertDoc extends Document {
   id: number;
+  orgId: mongoose.Types.ObjectId;   // org-scoped
   rule_id: number;
   source_ip: string;
   target_host?: string | null;
@@ -118,6 +179,7 @@ export interface IAlertDoc extends Document {
 
 const AlertSchema = new Schema<IAlertDoc>({
   id: { type: Number, unique: true, index: true },
+  orgId: { type: Schema.Types.ObjectId, required: true, index: true, ref: 'Organization' },
   rule_id: { type: Number, required: true, index: true },
   source_ip: { type: String, required: true, index: true },
   target_host: { type: String, default: null },
@@ -128,12 +190,16 @@ const AlertSchema = new Schema<IAlertDoc>({
   created_at: { type: Date, default: Date.now, index: true },
 });
 
+AlertSchema.index({ orgId: 1, created_at: -1 });
+AlertSchema.index({ orgId: 1, status: 1 });
+
 export const AlertModel: Model<IAlertDoc> =
   (mongoose.models.Alert as Model<IAlertDoc>) || mongoose.model<IAlertDoc>('Alert', AlertSchema);
 
 // ─── 5. Alert Note Schema ───────────────────────────────────────────────────
 export interface IAlertNoteDoc extends Document {
   id: number;
+  orgId: mongoose.Types.ObjectId;   // org-scoped (mirrors parent alert)
   alert_id: number;
   user_id: number;
   note: string;
@@ -142,6 +208,7 @@ export interface IAlertNoteDoc extends Document {
 
 const AlertNoteSchema = new Schema<IAlertNoteDoc>({
   id: { type: Number, unique: true, index: true },
+  orgId: { type: Schema.Types.ObjectId, required: true, index: true, ref: 'Organization' },
   alert_id: { type: Number, required: true, index: true },
   user_id: { type: Number, required: true },
   note: { type: String, required: true },
@@ -155,6 +222,7 @@ export const AlertNoteModel: Model<IAlertNoteDoc> =
 // ─── 6. IP Blocklist Schema ──────────────────────────────────────────────────
 export interface IIPBlocklistDoc extends Document {
   id: number;
+  orgId: mongoose.Types.ObjectId;   // org-scoped
   ip_address: string;
   reason?: string | null;
   triggered_by_rule_id?: number | null;
@@ -165,13 +233,17 @@ export interface IIPBlocklistDoc extends Document {
 
 const IPBlocklistSchema = new Schema<IIPBlocklistDoc>({
   id: { type: Number, unique: true, index: true },
-  ip_address: { type: String, required: true, unique: true, index: true },
+  orgId: { type: Schema.Types.ObjectId, required: true, index: true, ref: 'Organization' },
+  ip_address: { type: String, required: true, index: true },
   reason: { type: String, default: null },
   triggered_by_rule_id: { type: Number, default: null },
   added_by: { type: Number, default: null },
   expires_at: { type: Date, default: null },
   created_at: { type: Date, default: Date.now },
 });
+
+// Per-org unique IP (same IP can be blocked in different orgs independently)
+IPBlocklistSchema.index({ orgId: 1, ip_address: 1 }, { unique: true });
 
 export const IPBlocklistModel: Model<IIPBlocklistDoc> =
   (mongoose.models.IPBlocklist as Model<IIPBlocklistDoc>) ||
@@ -180,6 +252,7 @@ export const IPBlocklistModel: Model<IIPBlocklistDoc> =
 // ─── 7. Audit Log Schema ────────────────────────────────────────────────────
 export interface IAuditLogDoc extends Document {
   id: number;
+  orgId?: mongoose.Types.ObjectId | null;   // org-scoped; null for system events
   user_id?: number | null;
   action: string;
   target_type: string;
@@ -190,6 +263,7 @@ export interface IAuditLogDoc extends Document {
 
 const AuditLogSchema = new Schema<IAuditLogDoc>({
   id: { type: Number, unique: true, index: true },
+  orgId: { type: Schema.Types.ObjectId, default: null, index: true, ref: 'Organization' },
   user_id: { type: Number, default: null, index: true },
   action: { type: String, required: true, index: true },
   target_type: { type: String, required: true },
@@ -198,6 +272,8 @@ const AuditLogSchema = new Schema<IAuditLogDoc>({
   created_at: { type: Date, default: Date.now, index: true },
 });
 
+AuditLogSchema.index({ orgId: 1, created_at: -1 });
+
 export const AuditLogModel: Model<IAuditLogDoc> =
   (mongoose.models.AuditLog as Model<IAuditLogDoc>) ||
   mongoose.model<IAuditLogDoc>('AuditLog', AuditLogSchema);
@@ -205,23 +281,33 @@ export const AuditLogModel: Model<IAuditLogDoc> =
 // ─── 8. API Key Schema ──────────────────────────────────────────────────────
 export interface IApiKeyDoc extends Document {
   id: number;
+  orgId: mongoose.Types.ObjectId;   // org-scoped
   app_name: string;
   key_hash: string;
   is_active: boolean;
+  connection_method: 'code' | 'agent';
   created_by: number;
+  first_event_at?: Date | null;
   last_used_at?: Date | null;
+  event_count: number;
   created_at: Date;
 }
 
 const ApiKeySchema = new Schema<IApiKeyDoc>({
   id: { type: Number, unique: true, index: true },
+  orgId: { type: Schema.Types.ObjectId, required: true, index: true, ref: 'Organization' },
   app_name: { type: String, required: true },
   key_hash: { type: String, required: true, unique: true, index: true },
   is_active: { type: Boolean, default: true, index: true },
+  connection_method: { type: String, enum: ['code', 'agent'], default: 'code' },
   created_by: { type: Number, required: true, index: true },
+  first_event_at: { type: Date, default: null },
   last_used_at: { type: Date, default: null },
+  event_count: { type: Number, default: 0 },
   created_at: { type: Date, default: Date.now },
 });
+
+ApiKeySchema.index({ orgId: 1, is_active: 1 });
 
 export const ApiKeyModel: Model<IApiKeyDoc> =
   (mongoose.models.ApiKey as Model<IApiKeyDoc>) ||

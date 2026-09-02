@@ -12,8 +12,18 @@ import {
 export type Role = 'viewer' | 'analyst' | 'admin';
 export interface User {
   id: number;
+  name?: string;
   email: string;
   role: Role;
+  orgId?: string;
+}
+
+export interface SignupParams {
+  name: string;
+  email: string;
+  password: string;
+  orgName?: string;
+  inviteToken?: string;
 }
 
 type Status = 'loading' | 'authenticated' | 'anonymous';
@@ -22,6 +32,7 @@ interface AuthContextValue {
   user: User | null;
   status: Status;
   login: (email: string, password: string) => Promise<void>;
+  signup: (params: SignupParams) => Promise<void>;
   logout: () => Promise<void>;
   /** fetch() that attaches the access token and transparently refreshes once on 401. */
   authFetch: (path: string, init?: RequestInit) => Promise<Response>;
@@ -110,6 +121,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('authenticated');
   }, []);
 
+  const signup = useCallback(async (params: SignupParams) => {
+    const res = await fetch(`${API_BASE}/auth/signup`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      throw new Error(body?.error?.message ?? 'Sign up failed');
+    }
+    const data = (await res.json()) as { accessToken: string; user: User };
+    setToken(data.accessToken);
+    setUser(data.user);
+    setStatus('authenticated');
+  }, []);
+
   const logout = useCallback(async () => {
     if (AUTH_DISABLED) return; // no real session to end while the auth gate is bypassed
     try {
@@ -147,8 +177,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [doRefresh, loadMe]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, login, logout, authFetch }),
-    [user, status, login, logout, authFetch],
+    () => ({ user, status, login, signup, logout, authFetch }),
+    [user, status, login, signup, logout, authFetch],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

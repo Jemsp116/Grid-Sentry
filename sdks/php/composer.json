@@ -1,0 +1,30 @@
+{
+  "name": "grid-sentry/client",
+  "description": "Official PHP client SDK for Grid Sentry SOC & SIEM platform.",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Grid Sentry Team",
+      "email": "support@gridsentry.io"
+    }
+  ],
+  "require": {
+    "php": ">=7.4 || >=8.0",
+    "ext-json": "*",
+    "ext-curl": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.5 || ^10.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "GridSentry\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "GridSentry\\Tests\\": "tests/"
+    }
+  }
+}

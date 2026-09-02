@@ -32,4 +32,7 @@ export class ApiError extends Error {
   static tooManyRequests(message = 'Rate limit exceeded', code = 'too_many_requests') {
     return new ApiError(429, code, message);
   }
+  static gone(message = 'Resource is no longer available', code = 'gone') {
+    return new ApiError(410, code, message);
+  }
 }

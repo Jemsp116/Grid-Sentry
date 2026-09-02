@@ -15,6 +15,7 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 import auditRoutes from './routes/audit.routes.js';
 import mitreRoutes from './routes/mitre.routes.js';
 import apiKeysRoutes from './routes/apiKeys.routes.js';
+import inviteRoutes from './routes/invite.routes.js';
 import tenantDbRoutes from './routes/tenantDb.routes.js';
 import sdkRoutes from './routes/sdk.routes.js';
 
@@ -67,6 +68,7 @@ export function createApp() {
   app.use('/api/mitre', mitreRoutes);
   app.use('/api/api-keys', apiKeysRoutes);
   app.use('/api/tenant-db', tenantDbRoutes);
+  app.use('/api/org', inviteRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
