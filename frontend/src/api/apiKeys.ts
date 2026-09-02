@@ -89,26 +89,3 @@ export async function revokeApiKey(authFetch: AuthFetch, id: number): Promise<Ap
   const data = (await res.json()) as { data: ApiKeyItem };
   return data.data;
 }
-
-export async function sendSampleLogEvent(rawKey: string, appName: string): Promise<boolean> {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
-  const url = `${API_BASE}/logs/ingest`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': rawKey,
-    },
-    body: JSON.stringify([
-      {
-        timestamp: new Date().toISOString(),
-        event_type: 'source_verification_ping',
-        source_ip: '127.0.0.1',
-        user_identifier: 'system_probe@gridsentry.local',
-        raw_message: `Initial telemetry handshake verified from ${appName}`,
-        details: { probe_id: 'gs_probe_init', status: 'verified', source: appName },
-      },
-    ]),
-  });
-  return res.ok;
-}

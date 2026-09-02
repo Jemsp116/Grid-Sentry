@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext.js';
 import {
   createApiKey,
   fetchApiKeyStatus,
-  sendSampleLogEvent,
   type CreatedApiKeyResponse,
   type ApiKeyStatusResponse,
 } from '../api/apiKeys.js';
@@ -16,7 +15,7 @@ interface ConnectSourceWizardProps {
 
 type Step = 1 | 2 | 3;
 type Method = 'code' | 'agent';
-type Language = 'node' | 'python' | 'go' | 'php' | 'curl';
+type Language = 'nextjs' | 'node' | 'python' | 'go' | 'php' | 'curl';
 
 export default function ConnectSourceWizard({ isOpen, onClose, onSuccess }: ConnectSourceWizardProps) {
   const { authFetch } = useAuth();
@@ -32,13 +31,11 @@ export default function ConnectSourceWizard({ isOpen, onClose, onSuccess }: Conn
 
   // Step 2 State
   const [method, setMethod] = useState<Method>('code');
-  const [language, setLanguage] = useState<Language>('node');
+  const [language, setLanguage] = useState<Language>('nextjs');
   const [copiedSnippet, setCopiedSnippet] = useState(false);
 
   // Step 3 State
   const [statusData, setStatusData] = useState<ApiKeyStatusResponse | null>(null);
-  const [sendingTest, setSendingTest] = useState(false);
-  const [testSent, setTestSent] = useState(false);
   const pollTimerRef = useRef<number | null>(null);
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
@@ -54,13 +51,12 @@ export default function ConnectSourceWizard({ isOpen, onClose, onSuccess }: Conn
       setKeyData(null);
       setError(null);
       setMethod('code');
-      setLanguage('node');
+      setLanguage('nextjs');
       setStatusData(null);
-      setTestSent(false);
     }
   }, [isOpen]);
 
-  // Polling for Step 3 - keep polling even when connected to show live incrementing event count
+  // Polling for Step 3 - poll the real status from server
   const pollStatus = useCallback(async () => {
     if (!keyData) return;
     try {
@@ -107,94 +103,133 @@ export default function ConnectSourceWizard({ isOpen, onClose, onSuccess }: Conn
   // Step 2: Code Snippets
   const getSnippet = () => {
     switch (language) {
+      case 'nextjs':
+        return `// ─── Next.js App Router / Pages Router (Zero Dependencies) ───
+// Drop this helper directly into your Next.js project (e.g. lib/gridSentry.js or page.js):
+
+export async function sendGridSentryLog(eventType, rawMessage, details = {}) {
+  try {
+    await fetch('${SERVER_URL}/api/logs/ingest', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': '${activeKey}',
+      },
+      body: JSON.stringify([{
+        timestamp: new Date().toISOString(),
+        event_type: eventType,
+        source_ip: '127.0.0.1',
+        raw_message: rawMessage,
+        details: { project: '${app}', ...details },
+      }]),
+    });
+  } catch (err) {
+    console.error('[GridSentry] Ingestion error:', err);
+  }
+}
+
+// Example: Stream an event on page load or user action:
+// sendGridSentryLog('user_login_success', 'User alex@example.com signed in', { role: 'admin' });`;
+
       case 'node':
-        return `// 1. Install official Grid Sentry Node.js SDK:
-// npm install grid-sentry-client
+        return `// ─── Node.js / Express (Zero Dependencies using native fetch) ───
+async function logSecurityEvent(eventType, message, details = {}) {
+  await fetch('${SERVER_URL}/api/logs/ingest', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': '${activeKey}',
+    },
+    body: JSON.stringify([{
+      timestamp: new Date().toISOString(),
+      event_type: eventType,
+      source_ip: '127.0.0.1',
+      raw_message: message,
+      details: { app: '${app}', ...details },
+    }]),
+  });
+}
 
-import { GridSentry } from 'grid-sentry-client';
-
-// 2. Initialize with your project-scoped API key:
-const sentry = new GridSentry({
-  apiKey: '${activeKey}',
-  baseUrl: '${SERVER_URL}',
-  appName: '${app}',
-});
-
-// 3. Log security, auth, and system events anywhere in your app:
-sentry.log('user_login_success', {
-  user_identifier: 'alex@example.com',
-  raw_message: 'User alex@example.com signed in',
-  details: { role: 'operator', ip: '192.168.1.5' },
-});`;
+// Log auth or system event:
+logSecurityEvent('api_request', 'API endpoint /users requested', { status: 200 });`;
 
       case 'python':
-        return `# 1. Install official Grid Sentry Python SDK:
-# pip install grid-sentry-client
+        return `# ─── Python (Standard requests) ───
+import requests
+from datetime import datetime, timezone
 
-from grid_sentry import GridSentry
+def log_event(event_type, message, details=None):
+    url = "${SERVER_URL}/api/logs/ingest"
+    headers = {
+        "Content-Type": "application/json",
+        "X-API-Key": "${activeKey}"
+    }
+    payload = [{
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": event_type,
+        "source_ip": "127.0.0.1",
+        "raw_message": message,
+        "details": details or {"app": "${app}"}
+    }]
+    requests.post(url, json=payload, headers=headers, timeout=5)
 
-# 2. Initialize with your project-scoped API key:
-sentry = GridSentry(
-    api_key="${activeKey}",
-    base_url="${SERVER_URL}",
-    app_name="${app}",
-)
-
-# 3. Stream telemetry directly to your SOC dashboard:
-sentry.log(
-    event_type="user_login_success",
-    user_identifier="alex@example.com",
-    raw_message="User logged in from web portal",
-    details={"mfa_used": True},
-)`;
+# Example usage:
+log_event("user_login_success", "User alex@example.com signed in", {"role": "analyst"})`;
 
       case 'go':
-        return `// 1. Add official Grid Sentry Go module:
-// go get github.com/gridsentry/gridsentry-go
-
+        return `// ─── Go (Standard library) ───
 package main
 
 import (
-    "github.com/gridsentry/gridsentry-go"
+    "bytes"
+    "encoding/json"
+    "net/http"
+    "time"
 )
 
-func main() {
-    // 2. Initialize with your project-scoped API key:
-    sentry := gridsentry.NewClient(gridsentry.Config{
-        ApiKey:  "${activeKey}",
-        BaseURL: "${SERVER_URL}",
-        AppName: "${app}",
-    })
-    defer sentry.Close()
-
-    // 3. Fire-and-forget security events:
-    sentry.Log("user_login_success", gridsentry.Payload{
-        UserIdentifier: "alex@example.com",
-        RawMessage:     "User signed in via API",
-    })
+func LogEvent(eventType, message string) {
+    url := "${SERVER_URL}/api/logs/ingest"
+    payload := []map[string]interface{}{
+        {
+            "timestamp":   time.Now().UTC().Format(time.RFC3339),
+            "event_type":  eventType,
+            "source_ip":   "127.0.0.1",
+            "raw_message": message,
+        },
+    }
+    body, _ := json.Marshal(payload)
+    req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("X-API-Key", "${activeKey}")
+    http.DefaultClient.Do(req)
 }`;
 
       case 'php':
         return `<?php
-// 1. Install via Composer:
-// composer require grid-sentry/client
+// ─── PHP (Zero Dependencies using curl) ───
+function log_to_grid_sentry($event_type, $message) {
+    $url = '${SERVER_URL}/api/logs/ingest';
+    $payload = json_encode([[
+        'timestamp'   => gmdate('Y-m-d\\TH:i:s\\Z'),
+        'event_type'  => $event_type,
+        'source_ip'   => '127.0.0.1',
+        'raw_message' => $message,
+    ]]);
 
-use GridSentry\\Client as GridSentry;
-
-// 2. Initialize with your project-scoped API key:
-$sentry = new GridSentry([
-    'apiKey'  => '${activeKey}',
-    'baseUrl' => '${SERVER_URL}',
-    'appName' => '${app}',
-]);
-
-// 3. Log events:
-$sentry->log('user_login_success', [
-    'user_identifier' => 'alex@example.com',
-    'raw_message'     => 'User signed in',
-]);`;
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'X-API-Key: ${activeKey}'
+    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_exec($ch);
+    curl_close($ch);
+}`;
 
       case 'curl':
+      default:
         return `curl -X POST ${SERVER_URL}/api/logs/ingest \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: ${activeKey}" \\
@@ -246,20 +281,6 @@ $sentry->log('user_login_success', [
     URL.revokeObjectURL(url);
   };
 
-  const handleSendTestProbe = async () => {
-    if (!keyData) return;
-    setSendingTest(true);
-    try {
-      await sendSampleLogEvent(keyData.raw_key, app);
-      setTestSent(true);
-      await pollStatus();
-    } catch {
-      // Handled
-    } finally {
-      setSendingTest(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
       <div className="w-full max-w-2xl rounded-xl border border-border-default bg-bg-surface p-6 shadow-2xl relative overflow-hidden space-y-6">
@@ -278,29 +299,29 @@ $sentry->log('user_login_success', [
           {/* Stepper pills */}
           <div className="flex items-center gap-2 font-mono text-[11px]">
             <span
-              className={`px-2.5 py-1 rounded-full border ${
+              className={`rounded-full px-2.5 py-0.5 border ${
                 step === 1
-                  ? 'bg-accent-primary text-bg-base font-bold border-accent-primary'
+                  ? 'bg-accent-primary text-bg-base border-accent-primary font-bold'
                   : 'bg-bg-surface-raised text-text-secondary border-border-default'
               }`}
             >
-              1. Name
+              1. Details
             </span>
-            <span className="text-border-default">──</span>
+            <span className="text-text-disabled">›</span>
             <span
-              className={`px-2.5 py-1 rounded-full border ${
+              className={`rounded-full px-2.5 py-0.5 border ${
                 step === 2
-                  ? 'bg-accent-primary text-bg-base font-bold border-accent-primary'
+                  ? 'bg-accent-primary text-bg-base border-accent-primary font-bold'
                   : 'bg-bg-surface-raised text-text-secondary border-border-default'
               }`}
             >
-              2. Setup
+              2. Install
             </span>
-            <span className="text-border-default">──</span>
+            <span className="text-text-disabled">›</span>
             <span
-              className={`px-2.5 py-1 rounded-full border ${
+              className={`rounded-full px-2.5 py-0.5 border ${
                 step === 3
-                  ? 'bg-accent-primary text-bg-base font-bold border-accent-primary'
+                  ? 'bg-accent-primary text-bg-base border-accent-primary font-bold'
                   : 'bg-bg-surface-raised text-text-secondary border-border-default'
               }`}
             >
@@ -309,13 +330,16 @@ $sentry->log('user_login_success', [
           </div>
         </div>
 
-        {/* ── STEP 1: Project Name ────────────────────────────────────────── */}
+        {/* ── STEP 1: Name & Method Selection ───────────────────────────────── */}
         {step === 1 && (
           <form onSubmit={handleCreateProject} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-text-primary mb-1">
-                Project / Application Name *
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-text-primary uppercase tracking-wider font-mono">
+                Project or Application Name <span className="text-severity-critical">*</span>
               </label>
+              <p className="text-xs text-text-secondary">
+                Give this source a friendly name to identify where the incoming logs are coming from.
+              </p>
               <input
                 type="text"
                 required
@@ -325,6 +349,49 @@ $sentry->log('user_login_success', [
                 onChange={(e) => setProjectName(e.target.value)}
                 className="w-full rounded-lg border border-border-default bg-bg-base px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-disabled focus:border-accent-primary focus:outline-none"
               />
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="block text-xs font-semibold text-text-primary uppercase tracking-wider font-mono">
+                Connection Method
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMethod('code')}
+                  className={`p-3.5 rounded-lg border text-left flex flex-col justify-between transition-all ${
+                    method === 'code'
+                      ? 'border-accent-primary bg-accent-primary/10 shadow-sm'
+                      : 'border-border-default bg-bg-surface-raised hover:border-text-secondary'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">💻</span>
+                    <span className="font-semibold text-xs text-text-primary">In-Code SDK</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary mt-1">
+                    Direct integration in Node.js, Python, Go, PHP, or Next.js app.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMethod('agent')}
+                  className={`p-3.5 rounded-lg border text-left flex flex-col justify-between transition-all ${
+                    method === 'agent'
+                      ? 'border-accent-primary bg-accent-primary/10 shadow-sm'
+                      : 'border-border-default bg-bg-surface-raised hover:border-text-secondary'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">📄</span>
+                    <span className="font-semibold text-xs text-text-primary">Log Shipper Agent</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary mt-1">
+                    Tail existing log files (Nginx, Apache, Syslog) with zero code changes.
+                  </p>
+                </button>
+              </div>
             </div>
 
             <div className="rounded-lg border border-border-default bg-bg-base/50 p-3 text-xs text-text-secondary space-y-1">
@@ -361,141 +428,133 @@ $sentry->log('user_login_success', [
           </form>
         )}
 
-        {/* ── STEP 2: Plain-Language Branching ────────────────────────────── */}
+        {/* ── STEP 2: Code Snippets & Agent Config ─────────────────────────── */}
         {step === 2 && (
-          <div className="space-y-5">
-            {/* Plain language question card */}
-            <div>
-              <label className="block text-xs font-semibold text-text-primary mb-2">
-                How would you like to connect <span className="text-accent-primary font-mono">{app}</span>?
-              </label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMethod('code')}
-                  className={`flex flex-col text-left p-4 rounded-xl border transition-all ${
-                    method === 'code'
-                      ? 'border-accent-primary bg-accent-primary/10 shadow-sm'
-                      : 'border-border-default bg-bg-base/60 hover:bg-bg-surface-raised'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full mb-1">
-                    <span className="text-sm font-bold text-text-primary flex items-center gap-1.5">
-                      <span>💻</span> Developer Code
-                    </span>
-                    {method === 'code' && (
-                      <span className="h-2 w-2 rounded-full bg-accent-primary" />
-                    )}
-                  </div>
-                  <p className="text-xs text-text-secondary">
-                    Add 3 lines of code in Node.js, Python, Go, PHP, or cURL.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setMethod('agent')}
-                  className={`flex flex-col text-left p-4 rounded-xl border transition-all ${
-                    method === 'agent'
-                      ? 'border-accent-primary bg-accent-primary/10 shadow-sm'
-                      : 'border-border-default bg-bg-base/60 hover:bg-bg-surface-raised'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full mb-1">
-                    <span className="text-sm font-bold text-text-primary flex items-center gap-1.5">
-                      <span>📄</span> Point at Log Files
-                    </span>
-                    {method === 'agent' && (
-                      <span className="h-2 w-2 rounded-full bg-accent-primary" />
-                    )}
-                  </div>
-                  <p className="text-xs text-text-secondary">
-                    No code required. Download our pre-configured log-shipping agent.
-                  </p>
-                </button>
+          <div className="space-y-4">
+            {/* Scoped API Key Banner */}
+            <div className="rounded-lg border border-accent-primary/40 bg-accent-primary/10 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs">
+              <div className="space-y-0.5">
+                <div className="text-text-secondary text-[10px] uppercase font-sans font-semibold">
+                  API Key Generated for: <strong className="text-text-primary font-mono">{app}</strong>
+                </div>
+                <div className="text-accent-primary font-bold break-all select-all">{activeKey}</div>
               </div>
+              <button
+                type="button"
+                onClick={() => handleCopy(activeKey)}
+                className="shrink-0 self-start sm:self-center rounded bg-accent-primary/20 border border-accent-primary px-3 py-1.5 text-xs text-accent-primary hover:bg-accent-primary hover:text-bg-base transition-colors"
+              >
+                {copiedSnippet ? '✓ Copied' : 'Copy Key'}
+              </button>
             </div>
 
-            {/* Branch A: Developer Code Snippets */}
             {method === 'code' ? (
-              <div className="space-y-3">
-                {/* Language Picker */}
+              <div className="space-y-2">
+                {/* Language Tabs */}
                 <div className="flex items-center justify-between border-b border-border-default pb-1">
-                  <div className="flex items-center gap-1 overflow-x-auto">
-                    {(['node', 'python', 'go', 'php', 'curl'] as Language[]).map((lang) => (
+                  <div className="flex flex-wrap gap-1">
+                    {(['nextjs', 'node', 'python', 'go', 'php', 'curl'] as Language[]).map((lang) => (
                       <button
                         key={lang}
+                        type="button"
                         onClick={() => setLanguage(lang)}
-                        className={`px-3 py-1.5 text-xs font-mono font-medium rounded-t-lg transition-colors ${
+                        className={`rounded px-2.5 py-1 text-xs font-mono font-medium transition-colors ${
                           language === lang
-                            ? 'bg-bg-surface-raised text-accent-primary border-t-2 border-accent-primary font-bold'
+                            ? 'bg-accent-primary text-bg-base font-semibold'
                             : 'text-text-secondary hover:text-text-primary'
                         }`}
                       >
-                        {lang === 'node'
-                          ? 'Node.js'
-                          : lang === 'python'
-                          ? 'Python'
-                          : lang === 'go'
-                          ? 'Go'
-                          : lang === 'php'
-                          ? 'PHP'
-                          : 'cURL / Other'}
+                        {lang === 'nextjs' ? 'Next.js / React' : lang === 'node' ? 'Node.js' : lang.toUpperCase()}
                       </button>
                     ))}
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => handleCopy(getSnippet())}
-                    className="flex items-center gap-1 text-xs text-text-secondary hover:text-accent-primary px-2.5 py-1 rounded border border-border-default bg-bg-surface"
+                    className="text-xs text-accent-primary hover:underline font-mono"
                   >
-                    <span>📋</span>
-                    <span>{copiedSnippet ? 'Copied!' : 'Copy Snippet'}</span>
+                    {copiedSnippet ? '✓ Copied snippet' : 'Copy snippet'}
                   </button>
                 </div>
 
-                {/* Pre-filled Code Snippet */}
-                <div className="relative rounded-lg border border-border-default bg-bg-base p-4 font-mono text-xs overflow-x-auto text-text-primary max-h-56">
-                  <pre className="whitespace-pre">{getSnippet()}</pre>
+                {/* Snippet Display */}
+                <div className="relative rounded-lg border border-border-default bg-bg-base p-3 overflow-x-auto max-h-64">
+                  <pre className="text-xs font-mono text-text-primary leading-relaxed whitespace-pre">
+                    {getSnippet()}
+                  </pre>
+                </div>
+
+                {/* Universal script tag option */}
+                <div className="rounded border border-border-default bg-bg-surface-raised p-2.5 text-xs space-y-1">
+                  <span className="font-semibold text-text-primary flex items-center gap-1.5">
+                    <span>🌐</span> Or drop into any HTML / Next.js / Static Site:
+                  </span>
+                  <pre className="text-[11px] font-mono text-text-secondary overflow-x-auto select-all">
+                    {`<script src="${SERVER_URL}/api/sdk/gridsentry.js" data-api-key="${activeKey}" data-app="${app}"></script>`}
+                  </pre>
                 </div>
               </div>
             ) : (
-              /* Branch B: No-Code Agent Download */
-              <div className="rounded-lg border border-border-default bg-bg-base/70 p-5 space-y-4">
-                <div>
-                  <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider font-mono mb-1">
-                    Pre-Configured Log-Shipping Agent
-                  </h3>
-                  <p className="text-xs text-text-secondary">
-                    Your credentials and endpoint are already embedded. Simply download the config file and point the agent at your log folders:
-                  </p>
-                </div>
+              /* Agent Log Shipper Setup */
+              <div className="space-y-3">
+                <div className="rounded-lg border border-border-default bg-bg-base p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-text-primary uppercase font-mono">
+                        Grid Sentry Log Shipper
+                      </h4>
+                      <p className="text-xs text-text-secondary mt-0.5">
+                        Download pre-configured JSON configuration for your server daemon.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadAgentConfig}
+                      className="rounded bg-accent-primary px-3.5 py-1.5 text-xs font-semibold text-bg-base hover:opacity-90 shadow-sm"
+                    >
+                      📥 Download Config
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleDownloadAgentConfig}
-                    className="flex items-center gap-2 rounded-lg bg-accent-primary px-4 py-2.5 text-xs font-semibold text-bg-base hover:opacity-90 shadow"
-                  >
-                    <span>📥</span>
-                    <span>Download gridsentry-agent-{app}.json</span>
-                  </button>
-                </div>
+                  {/* Linux / macOS / WSL */}
+                  <div className="text-[11px] font-mono bg-bg-surface-raised p-2.5 rounded border border-border-default text-text-secondary space-y-1">
+                    <p className="text-text-primary font-bold font-sans flex items-center justify-between">
+                      <span>🐧 Linux / macOS / WSL Terminal:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(`curl -sSL ${SERVER_URL}/api/sdk/install-agent.sh | bash -s -- --key ${activeKey} --app ${app}`)}
+                        className="text-[10px] text-accent-primary hover:underline font-mono font-normal"
+                      >
+                        Copy
+                      </button>
+                    </p>
+                    <code className="text-text-primary block overflow-x-auto">curl -sSL {SERVER_URL}/api/sdk/install-agent.sh | bash -s -- --key {activeKey} --app {app}</code>
+                  </div>
 
-                <div className="rounded border border-border-default bg-bg-surface p-3 text-xs font-mono text-text-secondary space-y-1">
-                  <p className="text-text-primary font-semibold">Run on your server / container:</p>
-                  <code className="block text-accent-primary">
-                    npx @gridsentry/agent --config gridsentry-agent-{app}.json
-                  </code>
+                  {/* Windows PowerShell */}
+                  <div className="text-[11px] font-mono bg-bg-surface-raised p-2.5 rounded border border-border-default text-text-secondary space-y-1">
+                    <p className="text-text-primary font-bold font-sans flex items-center justify-between">
+                      <span>🪟 Windows PowerShell:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(`irm "${SERVER_URL}/api/sdk/install-agent.ps1?key=${activeKey}&app=${app}" | iex`)}
+                        className="text-[10px] text-accent-primary hover:underline font-mono font-normal"
+                      >
+                        Copy
+                      </button>
+                    </p>
+                    <code className="text-text-primary block overflow-x-auto">irm "{SERVER_URL}/api/sdk/install-agent.ps1?key={activeKey}&app={app}" | iex</code>
+                  </div>
                 </div>
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-2 border-t border-border-default">
+            <div className="flex items-center justify-between pt-2">
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="text-xs text-text-secondary hover:text-text-primary"
+                className="rounded-lg border border-border-default px-4 py-2 text-xs font-medium text-text-secondary hover:bg-bg-surface-raised transition-colors"
               >
                 ← Back to Rename
               </button>
@@ -523,9 +582,7 @@ $sentry->log('user_login_success', [
                 <div>
                   <h3 className="text-lg font-bold text-text-primary">Source Verified & Connected!</h3>
                   <p className="text-xs text-severity-resolved font-medium mt-0.5">
-                    {testSent
-                      ? `Handshake probe received. Telemetry pipeline is active for ${app}.`
-                      : `Live telemetry received from ${app}.`}
+                    Live telemetry stream established from <strong className="font-mono">{app}</strong>.
                   </p>
                 </div>
 
@@ -543,16 +600,16 @@ $sentry->log('user_login_success', [
                     </span>
                   </div>
                   <div className="flex justify-between border-b border-border-default/50 pb-1">
-                    <span>Telemetry Ingestion:</span>
+                    <span>Telemetry Pipeline:</span>
                     <span className="text-severity-resolved font-semibold flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full bg-severity-resolved animate-pulse" />
-                      Listening (Real-Time)
+                      Active (Real-Time)
                     </span>
                   </div>
                   <div className="flex justify-between border-b border-border-default/50 pb-1">
                     <span>Events Received:</span>
                     <span className="text-accent-primary font-bold text-sm">
-                      {statusData.event_count || 1}
+                      {statusData.event_count ?? 0}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -565,15 +622,15 @@ $sentry->log('user_login_success', [
                   </div>
                 </div>
 
-                {/* Quick terminal test to verify from user's machine */}
+                {/* Terminal cURL Test Helper */}
                 <div className="mx-auto max-w-md rounded-lg border border-border-default bg-bg-surface-raised/60 p-3 text-left space-y-2">
                   <p className="text-[11px] font-semibold text-text-primary flex items-center justify-between">
-                    <span>⚡ Test sending live event from your Terminal:</span>
+                    <span>⚡ Stream additional events from your Terminal:</span>
                     <button
                       type="button"
                       onClick={() =>
                         handleCopy(
-                          `curl -X POST ${SERVER_URL}/api/logs/ingest -H "Content-Type: application/json" -H "X-API-Key: ${activeKey}" -d '[{"event_type":"cli_test_ping","source_ip":"127.0.0.1","raw_message":"Live test from terminal for ${app}"}]'`
+                          `curl -X POST ${SERVER_URL}/api/logs/ingest -H "Content-Type: application/json" -H "X-API-Key: ${activeKey}" -d '[{"event_type":"live_cli_event","source_ip":"127.0.0.1","raw_message":"Telemetry ping from terminal for ${app}"}]'`
                         )
                       }
                       className="text-[10px] text-accent-primary hover:underline"
@@ -585,10 +642,10 @@ $sentry->log('user_login_success', [
                     {`curl -X POST ${SERVER_URL}/api/logs/ingest \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: ${activeKey}" \\
-  -d '[{"event_type":"cli_test_ping","raw_message":"Live test for ${app}"}]'`}
+  -d '[{"event_type":"live_cli_event","raw_message":"Telemetry event for ${app}"}]'`}
                   </pre>
                   <p className="text-[10px] text-text-disabled">
-                    Paste this into your terminal to see the <strong>Events Received</strong> counter increase immediately!
+                    Running this in your terminal will immediately increment the <strong>Events Received</strong> counter above!
                   </p>
                 </div>
 
@@ -620,29 +677,37 @@ $sentry->log('user_login_success', [
                     Waiting for first log event from <span className="text-accent-primary font-mono">{app}</span>…
                   </h3>
                   <p className="text-xs text-text-secondary max-w-md mx-auto mt-1">
-                    Send your first event using the code snippet or agent config from Step 2. This screen updates the moment an event arrives.
+                    Send your first event using your code, agent, or run the test command below in your terminal. This screen automatically turns green the moment your first event arrives.
                   </p>
                 </div>
 
-                {/* Instant In-Browser Test Probe */}
-                <div className="rounded-lg border border-border-default bg-bg-base/70 p-4 max-w-md mx-auto space-y-2 text-left text-xs">
-                  <p className="text-text-primary font-semibold flex items-center gap-1.5">
-                    <span>🧪</span> Don't have your app open right now?
+                {/* Real Terminal Verification Command */}
+                <div className="rounded-lg border border-border-default bg-bg-base/70 p-4 max-w-md mx-auto space-y-2 text-left text-xs font-mono">
+                  <div className="flex items-center justify-between font-sans">
+                    <span className="text-text-primary font-semibold flex items-center gap-1.5">
+                      <span>💻</span> Test Ingestion from Terminal:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopy(
+                          `curl -X POST ${SERVER_URL}/api/logs/ingest -H "Content-Type: application/json" -H "X-API-Key: ${activeKey}" -d '[{"event_type":"cli_test_ping","source_ip":"127.0.0.1","raw_message":"First telemetry event from ${app}"}]'`
+                        )
+                      }
+                      className="text-[10px] text-accent-primary hover:underline font-mono"
+                    >
+                      {copiedSnippet ? '✓ Copied!' : 'Copy cURL'}
+                    </button>
+                  </div>
+                  <pre className="text-[10px] bg-bg-surface-raised p-2.5 rounded border border-border-default overflow-x-auto text-text-primary">
+                    {`curl -X POST ${SERVER_URL}/api/logs/ingest \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: ${activeKey}" \\
+  -d '[{"event_type":"cli_test_ping","raw_message":"First telemetry event from ${app}"}]'`}
+                  </pre>
+                  <p className="text-[11px] font-sans text-text-secondary">
+                    Paste and run this command in your terminal to verify end-to-end ingestion with your new API key.
                   </p>
-                  <p className="text-text-secondary">
-                    Send a 1-click verification probe using your new API key to test the ingestion pipeline instantly:
-                  </p>
-                  <button
-                    onClick={handleSendTestProbe}
-                    disabled={sendingTest}
-                    className="w-full rounded-md bg-bg-surface-raised border border-border-default py-2 text-xs font-semibold text-accent-primary hover:border-accent-primary transition-colors disabled:opacity-50"
-                  >
-                    {sendingTest
-                      ? 'Sending Test Event…'
-                      : testSent
-                      ? '✓ Test Event Sent! Checking…'
-                      : '⚡ Send 1-Click Test Event Now'}
-                  </button>
                 </div>
 
                 <div className="flex items-center justify-between pt-4 border-t border-border-default max-w-lg mx-auto">
@@ -662,7 +727,7 @@ $sentry->log('user_login_success', [
                     }}
                     className="text-xs text-text-secondary hover:text-text-primary"
                   >
-                    I'll connect later (Close)
+                    I'll send logs later (Close)
                   </button>
                 </div>
               </div>
