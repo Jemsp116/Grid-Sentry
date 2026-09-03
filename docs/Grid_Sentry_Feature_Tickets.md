@@ -258,6 +258,24 @@ Add the ability to export a filtered set of alerts as PDF or CSV for a given dat
 
 ---
 
+### TICKET-015: Client SDKs, External Ingestion API & Connected Sources Management
+
+**Priority:** Should-have (Core Integrations)
+
+**Description:**
+Enable external applications, web services, and log-shipping agents to stream telemetry directly into Grid Sentry via a secure API key-authenticated endpoint (`POST /api/logs/ingest`). Provide a Connected Sources management UI, instant setup wizard, and official client SDKs (Node.js, Python, Go, PHP, universal browser script).
+
+**Acceptance Criteria:**
+- `POST /api/logs/ingest` accepts JSON event batches authenticated via `X-API-Key` header with per-key rate limiting.
+- Backend hashes stored API keys using SHA-256 (`api_keys` collection).
+- Connected Sources page (`/connected-sources`) lists active/revoked keys with event counts, connection methods, storage destinations, and single-show raw key generation modal.
+- Backend directly serves universal client script (`/api/sdk/gridsentry.js`), ES Module (`/api/sdk/gridsentry.mjs`), and native installers (`install-agent.ps1`, `install-agent.sh`).
+- Connect Source Wizard (`ConnectSourceWizard.tsx`) provides 3-step onboarding with live WebSocket/polling connection verification.
+
+**Dependencies:** TICKET-001, TICKET-003, TICKET-004
+
+---
+
 ### TICKET-016: Bring Your Own MongoDB (BYODB) Connection
 
 **Priority:** Nice-to-have (large scope — treat as its own phase, not core V1/V2)
@@ -277,3 +295,25 @@ Allow a connected user to supply their own MongoDB connection credentials so the
 - This feature is off by default and requires explicit, informed opt-in by the user, given the sensitivity of storing their database credentials.
 
 **Dependencies:** TICKET-001 (Auth), TICKET-002 (RBAC), TICKET-005 (Rule Engine), TICKET-006 (Alerts), TICKET-009 (Audit Log)
+
+---
+
+### TICKET-017: Per-Source OPERATIONS Dashboard & Dual-Mode Log Explorer
+
+**Priority:** Must-have for Multi-Project SOC Usability
+
+**Description:**
+Transform the entire OPERATIONS section (Overview Dashboard, Alert Feed, and Log Explorer) from a purely global/org-wide view into a source-aware system. Provide a global `SourceSelector` dropdown allowing users to scope all telemetry, alerts, and metrics to an individual connected project. In the Log Explorer, implement a dual-mode experience that pulls raw website/app events directly from the tenant's private MongoDB (`/logs/tenant-source-logs`) with OpenSearch fallback.
+
+**Acceptance Criteria:**
+- Global `SourceContext` loads all active API keys/sources on mount and persists selection across navigation via `sessionStorage`.
+- Sleek `SourceSelector` component appears in the header of Overview, Alert Feed, and Log Explorer, displaying status dots, event counters, and connection methods. Defaults to "All Sources".
+- Overview Dashboard displays a dedicated **Per-Source Quick Stats Card** when a specific source is selected (total events, first seen, last telemetry, connection method, private DB vs SIEM storage).
+- Alert Feed accepts an optional `logSource` query param, and backend matches alerts by resolving rules associated with that `log_source`.
+- Log Explorer implements Dual Modes:
+  - **Mode A (All Sources)**: Global full-text SIEM search across OpenSearch with time range presets, outcome filter, and raw syslog inspector.
+  - **Mode B (Specific Source Selected)**: Fetches raw telemetry directly from the tenant's private MongoDB (`/logs/tenant-source-logs`), rendering color-coded event type badges (`page_view`, `user_login_success`, `error`), source IPs, user identifiers, raw messages, and an expandable JSON payload drawer.
+- Zero TypeScript build errors across frontend and backend.
+
+**Dependencies:** TICKET-004, TICKET-006, TICKET-008, TICKET-015, TICKET-016
+

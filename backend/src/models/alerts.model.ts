@@ -52,6 +52,8 @@ export interface AlertFilterParams {
   status?: AlertStatus;
   sourceIp?: string;
   mitreId?: string;
+  /** Filter by the log_source field on the associated detection rule (matches connected source app_name) */
+  logSource?: string;
   page?: number;
   pageSize?: number;
 }
@@ -106,17 +108,34 @@ export async function getAlerts(params: AlertFilterParams): Promise<{
   pageSize: number;
   totalPages: number;
 }> {
-  const { orgId, severity, status, sourceIp, mitreId, page = 1, pageSize = 50 } = params;
+  const { orgId, severity, status, sourceIp, mitreId, logSource, page = 1, pageSize = 50 } = params;
 
   const queryFilter: any = { orgId };
   if (severity) queryFilter.severity = severity;
   if (status) queryFilter.status = status;
   if (sourceIp) queryFilter.source_ip = { $regex: sourceIp, $options: 'i' };
 
+  // Filter by MITRE technique: resolve matching rule IDs first
   if (mitreId) {
     const matchingRules = await RuleModel.find({ orgId, mitre_technique_id: mitreId }, { id: 1 });
     const ruleIds = matchingRules.map((r) => r.id);
     queryFilter.rule_id = { $in: ruleIds };
+  }
+
+  // Filter by log_source (connected source app_name): resolve matching rule IDs first
+  if (logSource) {
+    const logSourceRules = await RuleModel.find(
+      { orgId, log_source: { $regex: logSource, $options: 'i' } },
+      { id: 1 },
+    );
+    const logSourceRuleIds = logSourceRules.map((r) => r.id);
+    // Intersect with any existing rule_id filter from mitreId
+    if (queryFilter.rule_id) {
+      const existingSet = new Set(queryFilter.rule_id.$in as number[]);
+      queryFilter.rule_id = { $in: logSourceRuleIds.filter((id) => existingSet.has(id)) };
+    } else {
+      queryFilter.rule_id = { $in: logSourceRuleIds };
+    }
   }
 
   const total = await AlertModel.countDocuments(queryFilter);

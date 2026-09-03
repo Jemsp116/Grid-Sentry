@@ -74,6 +74,8 @@ export interface AlertFilterParams {
   status?: AlertStatus;
   sourceIp?: string;
   mitreId?: string;
+  /** Filter alerts by the log_source/app_name of the connected source that generated them */
+  logSource?: string;
   page?: number;
   pageSize?: number;
 }
@@ -97,6 +99,7 @@ export async function fetchAlerts(
   if (params.status) query.set('status', params.status);
   if (params.sourceIp) query.set('sourceIp', params.sourceIp);
   if (params.mitreId) query.set('mitreId', params.mitreId);
+  if (params.logSource) query.set('logSource', params.logSource);
   if (params.page) query.set('page', String(params.page));
   if (params.pageSize) query.set('pageSize', String(params.pageSize));
 
@@ -203,6 +206,7 @@ export async function exportAlertsReport(
   if (params.status) query.set('status', params.status);
   if (params.sourceIp) query.set('sourceIp', params.sourceIp);
   if (params.mitreId) query.set('mitreId', params.mitreId);
+  if (params.logSource) query.set('logSource', params.logSource);
   query.set('format', format);
 
   const res = await authFetch(`/alerts/export?${query.toString()}`);

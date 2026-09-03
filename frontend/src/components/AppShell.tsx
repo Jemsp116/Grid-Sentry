@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth, type Role } from '../context/AuthContext.js';
+import { SourceProvider } from '../context/SourceContext.js';
 
 interface NavItem {
   to: string;
@@ -148,7 +149,9 @@ export default function AppShell() {
       {/* ── Main content ───────────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[1440px] p-6 lg:p-8">
-          <Outlet />
+          <SourceProvider>
+            <Outlet />
+          </SourceProvider>
         </div>
       </main>
     </div>

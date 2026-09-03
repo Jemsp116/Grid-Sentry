@@ -18,7 +18,9 @@ import {
   type DashboardSummary,
   type GeoLocationMetric,
 } from '../api/dashboard.js';
+import { ALL_SOURCES_ID, useSource } from '../context/SourceContext.js';
 import ConnectSourceWizard from '../components/ConnectSourceWizard.js';
+import SourceSelector from '../components/SourceSelector.js';
 
 interface HealthResponse {
   status: string;
@@ -36,8 +38,20 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: '#3182CE',
 };
 
+function formatRelativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'Never';
+  const ms = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function Overview() {
   const { authFetch, user } = useAuth();
+  const { selectedSourceId, selectedSource } = useSource();
 
   const [lookbackHours, setLookbackHours] = useState(24);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -49,6 +63,8 @@ export default function Overview() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const isAllSources = selectedSourceId === ALL_SOURCES_ID;
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -92,10 +108,23 @@ export default function Overview() {
       ]
     : [];
 
+  // Source health indicator
+  function sourceStatusInfo() {
+    if (!selectedSource) return null;
+    const k = selectedSource;
+    if (!k.last_used_at && !k.first_event_at)
+      return { label: 'Waiting for Data', dot: 'bg-accent-primary animate-pulse', color: 'text-accent-primary' };
+    const hoursSince = (Date.now() - new Date(k.last_used_at ?? 0).getTime()) / (1000 * 60 * 60);
+    if (hoursSince <= 24)
+      return { label: 'Active & Streaming', dot: 'bg-severity-resolved', color: 'text-severity-resolved' };
+    return { label: 'No Recent Data', dot: 'bg-severity-medium', color: 'text-severity-medium' };
+  }
+  const sourceStatus = sourceStatusInfo();
+
   return (
     <div className="space-y-6">
       {/* Header & Lookback Filter */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-text-primary">SOC Overview Dashboard</h1>
@@ -120,7 +149,7 @@ export default function Overview() {
           </p>
         </div>
 
-        {/* Actions & Time Range Preset Pills */}
+        {/* Source Selector + Time Range + Connect */}
         <div className="flex flex-wrap items-center gap-3">
           {user?.role === 'admin' && (
             <button
@@ -131,6 +160,8 @@ export default function Overview() {
               <span>Connect a Project</span>
             </button>
           )}
+
+          <SourceSelector />
 
           <div className="flex rounded border border-border-default bg-bg-surface p-1">
             {[
@@ -160,8 +191,83 @@ export default function Overview() {
         </div>
       )}
 
+      {/* ── Per-source stats card (shown when a specific source is selected) ── */}
+      {!isAllSources && selectedSource && (
+        <div className="rounded-xl border border-accent-primary/30 bg-bg-surface p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Source identity */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-primary/10 border border-accent-primary/25 text-xl">
+                📦
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-text-primary">{selectedSource.app_name}</h2>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-mono font-medium
+                      ${sourceStatus?.color === 'text-severity-resolved'
+                        ? 'border-severity-resolved/40 bg-severity-resolved/10 text-severity-resolved'
+                        : sourceStatus?.color === 'text-severity-medium'
+                          ? 'border-severity-medium/40 bg-severity-medium/10 text-severity-medium'
+                          : 'border-accent-primary/40 bg-accent-primary/10 text-accent-primary'
+                      }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${sourceStatus?.dot}`} />
+                    {sourceStatus?.label}
+                  </span>
+                </div>
+                <p className="mt-0.5 font-mono text-[11px] text-text-secondary">
+                  Source ID: #{selectedSource.id} ·{' '}
+                  {selectedSource.connection_method === 'agent' ? '📄 Log Shipper Agent' : '💻 Code SDK'} ·{' '}
+                  {selectedSource.has_tenant_db ? '🔒 Private MongoDB' : '☁ Cloud SIEM'}
+                </p>
+              </div>
+            </div>
+
+            {/* Per-source quick stats */}
+            <div className="flex gap-6">
+              <div className="text-center">
+                <p className="font-mono text-xl font-bold text-accent-primary">
+                  {selectedSource.event_count?.toLocaleString() ?? '0'}
+                </p>
+                <p className="text-[10px] text-text-secondary font-mono uppercase tracking-wide mt-0.5">
+                  Total Events
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="font-mono text-sm font-semibold text-text-primary">
+                  {formatRelativeTime(selectedSource.first_event_at)}
+                </p>
+                <p className="text-[10px] text-text-secondary font-mono uppercase tracking-wide mt-0.5">
+                  First Seen
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="font-mono text-sm font-semibold text-text-primary">
+                  {formatRelativeTime(selectedSource.last_used_at)}
+                </p>
+                <p className="text-[10px] text-text-secondary font-mono uppercase tracking-wide mt-0.5">
+                  Last Telemetry
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Info banner: note about aggregate metrics */}
+          <div className="mt-4 rounded-lg border border-border-default bg-bg-base/50 px-4 py-2.5 text-xs text-text-secondary flex items-center gap-2">
+            <span className="text-accent-primary opacity-70">ℹ</span>
+            <span>
+              Overview metrics below show org-wide aggregates.{' '}
+              <strong className="text-text-primary">Log Explorer</strong> and{' '}
+              <strong className="text-text-primary">Alert Feed</strong> are fully scoped to{' '}
+              <span className="font-mono text-accent-primary">{selectedSource.app_name}</span>.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Zero Activity Onboarding Banner */}
-      {hasZeroActivity && (
+      {hasZeroActivity && isAllSources && (
         <div className="rounded-xl border border-accent-primary/30 bg-bg-surface p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1.5">
             <h2 className="text-base font-bold text-text-primary flex items-center gap-2">

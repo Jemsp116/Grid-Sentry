@@ -7,11 +7,13 @@ It ingests security logs from infrastructure honeypots and external applications
 malicious activity with custom rules, triages alerts, and responds by suspending
 compromised accounts or blocking attacker IPs.
 
-> **Build status:** MongoDB Migration & Client SDK complete — **TICKET-000 → 015**
+> **Build status:** MongoDB Migration, BYODB & Per-Source Operations complete — **TICKET-000 → 017**
 > (infrastructure, MongoDB 7.0 + Mongoose metadata engine, JWT auth + refresh/revocation, server-side RBAC, log
-> ingestion via API & OpenSearch SIEM storage, Log Explorer, detection rule engine,
+> ingestion via API & OpenSearch SIEM storage, dual-mode Log Explorer with private BYODB raw telemetry, detection rule engine,
 > Alert Feed & triage workflow, user suspension, IP blocklisting, Overview
-> dashboard & Geo-IP visualization, audit log, MITRE ATT&CK matrix, threat intel enrichment, Slack/email notifications, CSV/JSON report export, external log ingestion API & installable Client SDK). See [docs/](docs/) for the full roadmap.
+> dashboard & Geo-IP visualization, audit log, MITRE ATT&CK matrix, threat intel enrichment, Slack/email notifications, CSV/JSON report export, external log ingestion API & universal client SDKs, Bring-Your-Own-Database (BYODB) MongoDB connections, and Per-Source Operations Dashboard).
+>
+> 📖 **Architecture & Storage Maps:** See [`docs/STORAGE_ARCHITECTURE.md`](docs/STORAGE_ARCHITECTURE.md) for a comprehensive inventory of all databases, collections, files, and secrets across the app.
 
 ---
 
@@ -19,13 +21,15 @@ compromised accounts or blocking attacker IPs.
 
 | Layer | Technology | Description |
 |---|---|---|
-| **Backend API** | Node 22 · Express · TypeScript | REST API with JWT auth, server-side RBAC, and Zod validation |
+| **Backend API** | Node 22 · Express · TypeScript | REST API with JWT auth, server-side RBAC, Zod validation, and dynamic SDK script serving |
 | **Detection Worker** | Node 22 · TypeScript | Rule evaluation engine, alert generator & auto-blocking worker |
-| **Frontend** | React 18 · Vite · TypeScript · Tailwind | Dark-mode SOC Dashboard UI with Recharts & Geo-IP Threat Maps |
-| **Client SDK** | `grid-sentry-client` (Node.js SDK) | Installable client library for external app log ingestion |
-| **Metadata Database** | **MongoDB 7.0 (Mongoose ODM)** | Multi-collection storage (`users`, `refresh_tokens`, `rules`, `alerts`, `ip_blocklist`, `audit_log`) |
-| **SIEM Log Storage** | OpenSearch 2.15 | High-volume log search & aggregation engine |
+| **Frontend** | React 18 · Vite · TypeScript · Tailwind | Dark-mode SOC Dashboard UI with Recharts, Geo-IP Threat Maps, and SourceSelector |
+| **Client SDKs** | Universal JS (`/api/sdk/gridsentry.js`), ESM, Node.js, Python, Go, PHP | Installable & drop-in telemetry collectors for web apps, services, and log shippers |
+| **Primary Database** | **MongoDB 7.0 (Mongoose ODM)** | Structural storage (`organizations`, `users`, `refresh_tokens`, `rules`, `alerts`, `ip_blocklist`, `audit_log`, `api_keys`, `tenant_databases`) |
+| **Tenant Storage (BYODB)**| Customer MongoDB Instance | Dedicated private database storing raw website logs (`source_logs`) via AES-256-GCM encrypted link |
+| **SIEM Log Storage** | OpenSearch 2.15 | High-volume log search, indexing, & aggregation engine |
 | **Container Orchestration**| Docker Compose | Single command multi-container environment |
+
 
 ---
 
@@ -141,7 +145,23 @@ Follow this walkthrough to test every feature of Grid Sentry end-to-end:
    ```
 2. Verify that events sent via the SDK arrive at `${baseUrl}/api/logs/ingest` and appear in the Log Explorer (`/logs`).
 
+### 13. Connecting a Website or External Project (`/connected-sources`)
+1. In the sidebar, navigate to **Connected Sources** or click **"+ Connect a Project"** in the Overview header.
+2. Enter a project name (e.g. `web-portal`) and select your integration method:
+   - **Code SDK**: Copy the instant drop-in snippet for Next.js, Node.js, Python, Go, PHP, or HTML `<script>`.
+   - **Log Shipper**: Run the one-line automated PowerShell or Bash installer.
+3. The wizard will automatically listen for incoming events and mark the project connected upon initial handshake!
+
+### 14. Per-Source Scoped Operations & Dual-Mode Log Explorer
+1. In the top-right of **Overview**, **Alert Feed**, or **Log Explorer**, click the **Source Selector** dropdown.
+2. Select your connected project:
+   - **Overview Dashboard**: Displays a dedicated Per-Source Stats Card with live connection status, total events, first seen, and last telemetry time.
+   - **Alert Feed**: Scopes the alert feed to alerts generated from that specific source via detection rule resolution.
+   - **Log Explorer**: Automatically activates **Mode B (Raw Website Logs)**, fetching real raw events from your private MongoDB (`/logs/tenant-source-logs`) with color-coded event type badges (`page_view`, `user_login_success`, `error`), source IP, user identifier, and expandable JSON details drawer!
+3. Switch back to **"All Sources"** at any time to return to global SIEM OpenSearch queries.
+
 ---
+
 
 ## Automated Verification Suite
 

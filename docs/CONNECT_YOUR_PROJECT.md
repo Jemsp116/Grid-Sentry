@@ -102,3 +102,100 @@ Download the pre-filled configuration from the **"Connect a Project"** wizard in
 ```bash
 npx @gridsentry/agent --config gridsentry-agent.json
 ```
+
+---
+
+## 🚀 One-Click Installers (PowerShell & Bash)
+
+Grid Sentry serves automated installer scripts directly from its API for rapid onboarding:
+
+### Windows PowerShell (One-Liner)
+```powershell
+irm 'http://localhost:4000/api/sdk/install-agent.ps1?key=gs_live_YOUR_KEY&app=my-project' | iex
+```
+- Creates `$HOME\.gridsentry\agent-my-project.json`
+- Tests the endpoint and sends an immediate initial handshake event (`agent_connected`)
+
+### Linux / macOS / WSL Bash (One-Liner)
+```bash
+curl -sSL http://localhost:4000/api/sdk/install-agent.sh | bash -s -- --key gs_live_YOUR_KEY --app my-project
+```
+- Creates `~/.gridsentry/agent-my-project.json`
+- Verifies connection and streams initial connection telemetry
+
+---
+
+## 🌐 Web & Next.js Drop-in Client
+
+For web apps, websites, and Next.js (React), Grid Sentry serves universal, zero-dependency client bundles directly from the server:
+
+### A. Next.js Root Layout (`layout.js` or `layout.tsx`)
+Drop this directly into your `src/app/layout.js`:
+
+```javascript
+import Script from 'next/script';
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <head>
+        <Script
+          src="http://localhost:4000/api/sdk/gridsentry.js"
+          data-api-key="gs_live_YOUR_API_KEY"
+          data-app="my-website"
+          strategy="afterInteractive"
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+*Automatically captures unhandled window errors, promise rejections, and exposes `window.GridSentry` globally.*
+
+### B. Next.js Middleware Request Logger (`middleware.ts`)
+To stream every HTTP route visit and API request from your website:
+
+```typescript
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  fetch('http://localhost:4000/api/logs/ingest', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'gs_live_YOUR_API_KEY',
+    },
+    body: JSON.stringify([{
+      timestamp: new Date().toISOString(),
+      event_type: 'page_view',
+      source_ip: request.ip || '127.0.0.1',
+      raw_message: `${request.method} ${request.nextUrl.pathname}`,
+      details: {
+        path: request.nextUrl.pathname,
+        method: request.method,
+      }
+    }]),
+  }).catch(() => {});
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+};
+```
+
+---
+
+## 🔍 Viewing Your Website Logs in Grid Sentry
+
+Once your project is connected:
+1. Open the **OPERATIONS** section on your dashboard.
+2. In the top-right **Source Selector** dropdown, pick your project name (e.g. `my-website`).
+3. Click **Log Explorer**:
+   - You will see the **Raw Website Logs** stream directly from your private database.
+   - Each event displays its event type badge, source IP, user identifier, and message.
+   - Click any log row to inspect its full JSON payload details.
+

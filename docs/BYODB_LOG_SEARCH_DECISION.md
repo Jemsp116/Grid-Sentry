@@ -64,3 +64,50 @@ However, high-volume SIEM log ingestion generates millions of raw security log e
 - **KMS Encryption**: Tenant connection URIs are encrypted using AES-256-GCM authenticated encryption (`kmsEncryption.ts`).
 - **SSRF Validation**: Submitted URIs undergo strict DNS resolution and CIDR validation (`ssrfGuard.ts`) to block connections to loopback or private network ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1/128`).
 - **Zero Log Leakage**: Raw connection credentials are never printed in server logs or API error outputs.
+
+---
+
+## 6. Implementation Update: Dual Storage & Direct BYODB Raw Telemetry Explorer (2026-09-03)
+
+As of September 2026, Grid Sentry enhanced the BYODB architecture to satisfy enterprise tenant data residency requirements without sacrificing real-time SIEM detection:
+
+```
+                  ┌──────────────────────────────────────────────┐
+                  │      Connected Source (Web/SDK/Agent)        │
+                  └──────────────────────┬───────────────────────┘
+                                         │ POST /api/logs/ingest (X-API-Key)
+                                         ▼
+                  ┌──────────────────────────────────────────────┐
+                  │              Grid Sentry Engine              │
+                  └──────────────┬────────────────┬──────────────┘
+                                 │                │
+            Dual-Write Path A    │                │ Dual-Write Path B
+            (SIEM Detection)     │                │ (Private Raw Telemetry)
+                                 ▼                ▼
+                  ┌──────────────────────┐ ┌───────────────────────────────┐
+                  │  OpenSearch Cluster  │ │      Tenant MongoDB (BYODB)   │
+                  │   (`soc-logs-*`)     │ │     collection: `source_logs` │
+                  └──────────┬───────────┘ └──────────────┬────────────────┘
+                             │                            │
+                             │ (Mode A: All Sources)      │ (Mode B: Per-Source)
+                             ▼                            ▼
+                  ┌────────────────────────────────────────────────────────┐
+                  │              Dual-Mode Log Explorer UI                 │
+                  └────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Behaviors:
+
+1. **Dual-Write on Ingest (`POST /api/logs/ingest`)**:
+   - If the tenant has a verified private database (`hasVerifiedTenantDb`), the incoming raw events are written **directly into the tenant's private MongoDB** in the `source_logs` collection via `writeTenantSourceLogs()`.
+   - Grid Sentry's central database only records non-sensitive connection counters (`event_count`, `last_used_at`, `is_connected`).
+   - Simultaneously, events are forwarded to OpenSearch so detection rules (e.g. brute force, anomalies) continue firing with zero latency.
+
+2. **Dedicated Private Read Endpoint (`GET /api/logs/tenant-source-logs`)**:
+   - Allows the authenticated tenant to retrieve their raw log documents directly from their own MongoDB.
+   - Supports filtering by `sourceId`, `appName`, pagination (`limit`, `skip`), and client-side query matching.
+
+3. **Dual-Mode Log Explorer in the SOC Frontend**:
+   - **Mode A (All Sources)**: Global SOC analysts query the full OpenSearch cluster across all ingested system telemetry.
+   - **Mode B (Specific Source Selected)**: Scoped directly to that project's raw website/app telemetry, reading straight from the tenant's private MongoDB and rendering real event badges (`event_type`), user identifiers, and raw JSON payloads.
+

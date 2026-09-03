@@ -92,6 +92,65 @@ Two type families, each doing a distinct job:
 
 ---
 
+## Part 1.5: Operations & Source-Aware Interface Specifications
+
+### 1. SourceSelector Component
+
+The **SourceSelector** is the global scoping controller for the OPERATIONS section (Overview Dashboard, Alert Feed, and Log Explorer).
+
+- **Visual structure**: A compact pill button (`border-border-default`, `bg-bg-surface`, `text-text-secondary`) featuring:
+  - An icon/status dot: 🌐 for "All Sources", or a color-coded status dot for specific projects (Green: Active streaming in past 24h, Yellow: Idle/No data past 24h, Blue pulse: Waiting for initial event).
+  - Selected project name label (truncated with `max-w-[160px]`).
+  - Total source count badge (when "All Sources" is active).
+  - Animated chevron indicator (`transition-transform rotate-180`).
+- **Dropdown List**:
+  - Dismisses automatically on outside click (`mousedown` listener) or Escape key.
+  - Features smooth entry animation (`fadeSlideIn 0.12s ease-out`).
+  - Lists "All Sources" option followed by all registered active projects.
+  - Each item displays project name, connection method (📄 Log Shipper Agent vs 💻 Code SDK), and total ingested event count.
+- **State Management**:
+  - Wrapped in `SourceProvider` in `AppShell.tsx` and consumed via `useSource()` hook.
+  - Selected source ID is persisted in `sessionStorage` (`gs_selected_source`) so navigation between Overview, Alerts, and Log Explorer preserves the analyst's investigation context.
+
+### 2. Dual-Mode Log Explorer (`/logs`)
+
+The Log Explorer dynamically adapts based on the active source selection:
+
+- **Mode A: All Sources (SIEM OpenSearch Engine)**:
+  - Queries the central OpenSearch cluster (`/api/logs/search`).
+  - Controls: Keyword text input, Source IP input, Outcome dropdown (`success` / `failure`), Log Source filter, and time presets (Last 1h, 6h, 24h, 7d, All time).
+  - Results Table: Formatted in IBM Plex Mono with timestamp, source IP, user, outcome (color-coded), and raw syslog message.
+  - Detail Panel: Slide-in drawer on row click displaying OpenSearch index, document ID, parsed fields, and collapsible full JSON document.
+- **Mode B: Specific Source Selected (Direct Raw Website/App Telemetry)**:
+  - Reads directly from the tenant's private BYODB MongoDB (`/api/logs/tenant-source-logs`) with OpenSearch fallback.
+  - Mode indicator banner: Highlights the active connected project with a live indicator and data privacy status (🔒 Private MongoDB vs ☁ SIEM Engine).
+  - Controls: Keyword filter, Event Type filter, and Source IP filter.
+  - Results Table: Columns optimized for web applications: Timestamp, Event Type badge, Source IP, User / Identifier, and Raw Message.
+  - Event Type Badges:
+    - `user_login_failed` / `error` / `client_error`: Red badge (`severity-critical`).
+    - `suspicious` / `rate_limit`: Orange badge (`severity-high`).
+    - `user_login_success` / `auth`: Green badge (`severity-resolved`).
+    - `page_view` / `api_request`: Neutral surface badge (`bg-bg-surface-raised`).
+  - Event Detail Drawer: Displays timestamp, event type, caller IP, authenticated user identity, full formatted message, and interactive JSON payload inspector.
+
+### 3. Connected Sources & Connect Source Wizard (`/connected-sources`)
+
+- **Connected Sources Management View**:
+  - Displays all registered projects, storage destinations (🔒 Private MongoDB vs ☁ Cloud SIEM), live ingestion statuses, method tags, and event volume meters.
+  - Admin actions: Revoke credentials modal with confirmation safeguard.
+- **Connect Source Wizard (`ConnectSourceWizard.tsx`)**:
+  - 3-Step Guided Modal:
+    - Step 1: Project naming and integration method selection (Developer Code SDK vs No-Code Log Shipper Agent).
+    - Step 2: Instant API key generation with single-show copy modal, drop-in instructions for Next.js, Node.js, Python, Go, PHP, and curl, plus downloadable configuration JSON.
+    - Step 3: Real-time telemetry connection verification with animated radar and polling feedback (`/api/keys/:id/status`).
+
+### 4. Database Settings (BYODB Management — `/settings/database`)
+
+- Admin console allowing organizations to connect their own MongoDB instance (Atlas or self-hosted).
+- Features connection string input with masking, instant TLS handshake and write-test verification, status badge (`verified`, `failed`, `pending`), and disconnect confirmation modal.
+
+---
+
 ## Part 2: Third-Party API & Integration Spec
 
 ### 1. MaxMind GeoLite2 (Geo-IP lookup)

@@ -279,3 +279,37 @@ Stores each user's encrypted database connection details.
 - MongoDB is not built for fast full-text log search the way OpenSearch is — raw log search/explorer functionality may need a different approach per tenant, or may need to stay on shared OpenSearch even if structured data (alerts, rules) moves to the tenant's own MongoDB.
 - This introduces a much larger security surface area (storing other users' database credentials) than the rest of the V1/V2 build — it should be scoped and reviewed as its own security-critical phase, not bolted on incrementally.
 
+---
+
+## 6. Implementation Architecture Update: Connected Sources & Multi-Project Operations (Implemented September 2026)
+
+### 6.1 Database Migration & Multi-Tenant Storage
+- **Primary Metadata Engine**: Built on **MongoDB 7.0** using Mongoose schemas (`users`, `refresh_tokens`, `rules`, `alerts`, `alert_notes`, `ip_blocklist`, `audit_log`, `api_keys`, `tenant_databases`).
+- **Telemetry Storage & BYODB**:
+  - Central OpenSearch cluster (`soc-logs-*`) for real-time SIEM detection rule evaluation.
+  - Dedicated private MongoDB instances (BYODB) store client raw logs in the `source_logs` collection via `writeTenantSourceLogs()`.
+  - Credentials encrypted with AES-256-GCM (`kmsEncryption.ts`) and protected with DNS/CIDR SSRF validation (`ssrfGuard.ts`).
+
+### 6.2 External Ingestion & SDK Serving Routes
+- `POST /api/logs/ingest`: Accepts batch JSON telemetry, authenticated via `X-API-Key` with rate limiting.
+- `GET /api/logs/tenant-source-logs`: Fetches raw telemetry directly from tenant's private MongoDB for the Log Explorer.
+- `GET /api/sdk/gridsentry.js`: Serves universal client bundle with auto-error capture.
+- `GET /api/sdk/gridsentry.mjs`: Serves ES Module client.
+- `GET /api/sdk/install-agent.ps1` & `install-agent.sh`: Dynamic automated shipper installers.
+- `GET /api/sdk/agent-config`: Dynamic shipper JSON generator.
+
+### 6.3 Operations Scoping Architecture
+```
+[ AppShell.tsx ]
+       │
+       ▼
+ [ SourceProvider ] ─── (loads /api/api-keys once on mount, stores in sessionStorage)
+       │
+       ├──► Overview.tsx       (SourceSelector + Per-Source Stats Card)
+       ├──► AlertFeed.tsx      (SourceSelector + ?logSource=<app_name> rule-filtered alerts)
+       └──► LogExplorer.tsx    (SourceSelector + Dual-Mode: OpenSearch SIEM vs BYODB Raw Telemetry)
+```
+- **Alert Scoping**: The backend matches alerts to connected sources by resolving detection rules configured with matching `log_source` values (`alerts.model.ts`).
+- **Log Explorer Dual Mode**: Automatically switches between OpenSearch SIEM search (All Sources) and Direct BYODB Telemetry (Specific Source selected), allowing operators to view real web/app logs without interference from unrelated system noise.
+
+

@@ -4,7 +4,7 @@
 > first. It captures decisions, current status, how to run, and what's next —
 > everything not obvious from the code alone.
 >
-> _Last updated: 2026-08-28 (after EXTERNAL DATA CONNECTIONS & TICKETS 000-016 COMPLETE)._
+> _Last updated: 2026-09-03 (after TICKETS 000-017 & PER-SOURCE OPERATIONS DASHBOARD COMPLETE)._
 
 ---
 
@@ -15,7 +15,7 @@ Grid Sentry is an enterprise **Security Operations Center (SOC) Log Ingestion & 
 targeting SOC-analyst roles, so realism matters more than shortcuts.
 
 Full spec lives in [`docs/`](docs/): PRD, Technical Architecture, Security &
-Access, Frontend Spec, and Feature Tickets (TICKET-000 → 013).
+Access, Frontend Spec, and Feature Tickets (TICKET-000 → 017).
 
 ## 2. Locked decisions (agreed with the user 2026-08-27)
 
@@ -24,9 +24,9 @@ Access, Frontend Spec, and Feature Tickets (TICKET-000 → 013).
 | **Language** | **TypeScript** | Spec's folder tree showed `.js/.jsx`; we upgraded. |
 | **Frontend** | **Tailwind + Recharts + react-simple-maps** | Tokens in `frontend/tailwind.config.js`. Recharts/maps deferred to TICKET-008 (not installed yet). |
 | **Demo log source** | **Real sshd + Hydra in Docker** | `ssh-target` + `attacker` containers; Vector tails auth log → OpenSearch. Done (TICKET-003). |
-| **Build scope** | **TICKET-000 → 015 100% COMPLETE** | Infra + auth + RBAC + ingestion + log explorer + detection rules + alerts + user suspension & blocklist + overview dashboard & Geo-IP + audit log + MITRE ATT&CK matrix + threat intel enrichment + Slack/email notifications + report export & theme polish + external log ingestion API & installable Client SDK. Done. |
+| **Build scope** | **TICKET-000 → 017 100% COMPLETE** | Infra + auth + RBAC + ingestion + log explorer + detection rules + alerts + user suspension & blocklist + overview dashboard & Geo-IP + audit log + MITRE ATT&CK matrix + threat intel enrichment + Slack/email notifications + report export & theme polish + external log ingestion API & installable Client SDK + BYODB + per-source Operations Dashboard & dual-mode Log Explorer. Done. |
 
-## 3. Current status — DONE: ALL TICKETS (TICKET-000 → 015)
+## 3. Current status — DONE: ALL TICKETS (TICKET-000 → 017)
 
 | Component | Choice / Details | Notes |
 |---|---|---|
@@ -61,6 +61,7 @@ Access, Frontend Spec, and Feature Tickets (TICKET-000 → 013).
 - **013 Report Export & Dark-Mode Theming Polish** — Alert report export endpoint (`GET /api/alerts/export`) supporting CSV and JSON downloads with full query filter preservation (`severity`, `status`, `sourceIp`, `mitreId`). Frontend Export CSV & Export JSON action buttons on the Alert Feed (`AlertFeed.tsx` & `api/alerts.ts`). Comprehensive dark-mode SOC theme audit across all 9 pages.
 - **015 Grid Sentry Client Library & External Ingestion API** — External log ingestion REST endpoint (`POST /api/logs/ingest`) authenticated via hashed `X-API-Key`. Standalone installable Node.js SDK package (`grid-sentry-client`) featuring `gridSentry.init()`, `gridSentry.log()`, `gridSentry.flush()`, fire-and-forget 1-retry delivery safety, optional memory queue request batching, TypeScript autocomplete, and explicit server-side usage documentation. Admin UI screen (`ConnectedSources.tsx`) for API key management with single-show raw key copy modal.
 - **016 Bring Your Own MongoDB (BYODB) Connection** — Opt-in tenant database connection manager featuring AES-256-GCM KMS authenticated encryption (`kmsEncryption.ts`), strict DNS/IP CIDR SSRF validation (`ssrfGuard.ts`), per-tenant Mongoose connection pool manager (`tenantConnectionManager.ts`), unified Data Access Abstraction Layer (`tenantDataAccess.ts`), tenant DB management API (`POST/GET/DELETE /api/tenant-db/*`), Database Settings React page (`DatabaseSettings.tsx`), and architectural decision documentation (`BYODB_LOG_SEARCH_DECISION.md`).
+- **017 Per-Source OPERATIONS Dashboard & Dual-Mode Log Explorer** — Scoped all OPERATIONS pages (Overview, Alert Feed, and Log Explorer) per connected source using `SourceContext` and `SourceSelector` with `sessionStorage` persistence. Overview displays per-source metric cards. Alert Feed matches alerts to sources via detection rule `log_source` resolution. Log Explorer features Dual Modes: Mode A (All Sources - OpenSearch SIEM) vs Mode B (Specific Source - direct raw website telemetry from tenant BYODB MongoDB via `GET /api/logs/tenant-source-logs` with event badges, user identifiers, and raw JSON payload inspector). Built-in SDK distribution routes (`/api/sdk/*`) and native PowerShell/Bash installers.
 - **MongoDB Database Layer Migration** — Replaced PostgreSQL with MongoDB 7.0 (`mongo:7.0` container, Mongoose ODM). Mongoose schemas in `backend/src/config/mongoSchemas.ts` for `users`, `refresh_tokens`, `rules`, `alerts`, `alert_notes`, `ip_blocklist`, `audit_log`, `api_keys`, and `tenant_databases`.
 
 **Verification (all green):**

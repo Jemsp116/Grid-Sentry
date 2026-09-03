@@ -9,6 +9,7 @@ const AlertFilterSchema = z.object({
   status: z.enum(['new', 'investigating', 'resolved', 'false_positive']).optional(),
   sourceIp: z.string().optional(),
   mitreId: z.string().optional(),
+  logSource: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(500).default(50),
 });
@@ -209,6 +210,7 @@ export async function exportAlerts(req: Request, res: Response): Promise<void> {
     status: (req.query.status as any) || undefined,
     sourceIp: (req.query.sourceIp as string) || undefined,
     mitreId: (req.query.mitreId as string) || undefined,
+    logSource: (req.query.logSource as string) || undefined,
     page: 1,
     pageSize: 10000,
   };
